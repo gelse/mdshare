@@ -39,3 +39,11 @@ jobs:
         with:
           name: integration-test-results
           path: test-results/
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Integration Tests
+          path: test-results/junit.xml
+          reporter: java-junit
