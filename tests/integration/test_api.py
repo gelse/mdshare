@@ -76,6 +76,25 @@ class TestHealthEndpoint:
 
 
 @pytest.mark.integration
+class TestSwaggerDocs:
+    """``GET /api/docs/`` and ``GET /apispec.json`` — Swagger UI and OpenAPI spec."""
+
+    def test_swagger_ui_returns_200(self, integration_base_url: str) -> None:
+        resp = httpx.get(f"{integration_base_url}/api/docs/")
+        assert resp.status_code == 200
+        assert resp.headers.get("content-type", "").startswith("text/html")
+        assert "swagger" in resp.text.lower()
+
+    def test_apispec_json_returns_200(self, integration_base_url: str) -> None:
+        resp = httpx.get(f"{integration_base_url}/apispec.json")
+        assert resp.status_code == 200
+        assert resp.headers.get("content-type", "").startswith("application/json")
+        data = resp.json()
+        assert data["swagger"] == "2.0"
+        assert data["info"]["title"] == "mdshare API"
+
+
+@pytest.mark.integration
 class TestThemesCSS:
     """``GET /themes.css`` — serves the theme stylesheet."""
 
