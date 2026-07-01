@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Documentation
+docs/TASK_LOG.md
+
+# Data
+data/
+
+# Docker
+.docker/
+
+# Testing
+/coverage/
+htmlcov/
+.coverage
+.pytest_cache/
+test-results/
+backend/__tests__/__data__/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# SSL certificates (generated)
+certs/

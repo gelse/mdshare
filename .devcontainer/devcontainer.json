@@ -1,0 +1,34 @@
+{
+  "name": "mdshare",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+        "mhutchie.git-graph",
+        "github.vscode-github-actions",
+        "bierner.markdown-mermaid",
+        "redhat.vscode-yaml",
+        "zoocodeorganization.zoo-code"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "postCreateCommand": "pip install -r requirements-dev.txt",
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,readonly",
+    "source=${localEnv:HOME}/.roo,target=/home/vscode/.roo,type=bind",
+    "source=${localEnv:HOME}/.config/Code/User/globalStorage/zoocodeorganization.zoo-code,target=/home/vscode/.vscode-server/data/User/globalStorage/zoocodeorganization.zoo-code,type=bind"
+  ]
+}

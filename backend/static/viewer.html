@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en" data-color-mode="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>mdshare</title>
+  <link rel="stylesheet" href="/themes.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css"
+        data-color-mode-src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
+  <style>
+    body { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+    #pw-overlay { position: fixed; inset: 0; background: var(--bg, #fff);
+                  display: flex; align-items: center; justify-content: center; z-index: 100; }
+    #pw-overlay.hidden { display: none; }
+    #pw-card { padding: 2rem; border: 1px solid var(--border, #d0d7de);
+               border-radius: 8px; text-align: center; }
+    #pw-card input { padding: 0.5rem; margin: 1rem 0; width: 200px; }
+    #pw-card button { padding: 0.5rem 1.5rem; }
+    #error-msg { color: #cf222e; margin-top: 0.5rem; font-size: 0.9rem; }
+    img { max-width: 100%; }
+    pre code { border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div id="pw-overlay" class="hidden">
+    <div id="pw-card">
+      <h2>Password Required</h2>
+      <input type="text" id="pw-input" placeholder="Enter password" autofocus>
+      <br>
+      <button id="pw-submit">View</button>
+      <div id="error-msg"></div>
+    </div>
+  </div>
+  <main id="content" class="markdown-body"></main>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.0/dist/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <script>
+    // Extract document ID from URL path: /v/<id>
+    const pathParts = window.location.pathname.split('/');
+    const docId = pathParts[2];
+    const overlay = document.getElementById('pw-overlay');
+    const errorMsg = document.getElementById('error-msg');
+    const contentEl = document.getElementById('content');
+    const pwInput = document.getElementById('pw-input');
+
+    // Configure marked
+    marked.setOptions({
+      highlight: (code, lang) => {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+
+    // Configure mermaid
+    mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+    let currentPassword = '';
+
+    async function fetchRaw(password) {
+      let url = `/v/${docId}/raw`;
+      if (password) url += `?pw=${encodeURIComponent(password)}`;
+      const res = await fetch(url);
+      return res;
+    }
+
+    async function renderMarkdown(md) {
+      // Pre-process mermaid blocks: mark them for later rendering
+      const mermaidBlocks = [];
+      let processed = md.replace(/```mermaid\n([\s\S]*?)```/g, (_, code) => {
+        const id = 'mermaid-' + mermaidBlocks.length;
+        mermaidBlocks.push({ id, code });
+        return `<div class="mermaid" id="${id}"></div>`;
+      });
+
+      // Render markdown
+      let html = marked.parse(processed);
+      html = DOMPurify.sanitize(html, {
+        ADD_ATTR: ['target'],
+        ADD_TAGS: ['div'],
+        ALLOWED_ATTR: ['class', 'id', 'target', 'href', 'src', 'alt']
+      });
+
+      contentEl.innerHTML = html;
+
+      // Render KaTeX
+      renderMathInElement(contentEl, {
+        delimiters: [
+          { left: '$$', right: '$$', display: true },
+          { left: '$', right: '$', display: false }
+        ]
+      });
+
+      // Render mermaid diagrams
+      if (mermaidBlocks.length > 0) {
+        for (const block of mermaidBlocks) {
+          try {
+            const { svg } = await mermaid.render(block.id + '-svg', block.code);
+            const el = document.getElementById(block.id);
+            if (el) el.innerHTML = svg;
+          } catch (e) { /* mermaid parse error — leave raw */ }
+        }
+      }
+    }
+
+    async function loadContent(password) {
+      const res = await fetchRaw(password);
+      if (res.status === 401) {
+        overlay.classList.remove('hidden');
+        pwInput.focus();
+        errorMsg.textContent = password ? 'Incorrect password' : '';
+      } else if (res.ok) {
+        overlay.classList.add('hidden');
+        const md = await res.text();
+        await renderMarkdown(md);
+      } else if (res.status === 404) {
+        contentEl.innerHTML = '<h1>Not Found</h1><p>This share does not exist or has been removed.</p>';
+      } else {
+        contentEl.innerHTML = '<h1>Error</h1><p>Something went wrong loading this share.</p>';
+      }
+    }
+
+    // Submit password
+    document.getElementById('pw-submit').addEventListener('click', () => {
+      currentPassword = pwInput.value.trim();
+      loadContent(currentPassword);
+    });
+    pwInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        currentPassword = pwInput.value.trim();
+        loadContent(currentPassword);
+      }
+    });
+
+    // Initial load
+    loadContent('');
+  </script>
+</body>
+</html>

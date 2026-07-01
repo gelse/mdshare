@@ -1,0 +1,24 @@
+services:
+  mdshare:
+    build: .
+    container_name: mdshare
+    restart: unless-stopped
+    # Remove ports mapping when running behind a reverse proxy (e.g. Traefik)
+    ports:
+      - "8080:5000"
+    volumes:
+      - mdshare_data:/data
+    environment:
+      - MDSHARE_DATA_DIR=/data
+      - MDSHARE_MASTER_PASSWORD=change-me-to-a-secure-password
+      - MDSHARE_MAX_SIZE=5242880
+      # Uncomment and set when running behind a reverse proxy:
+      # - MDSHARE_BASE_URL=https://mdshare.example.com
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').getcode() == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mdshare_data:
