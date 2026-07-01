@@ -12,6 +12,7 @@ import pytest
 
 from backend.config import Config
 from backend.mcp_server import (
+    _bearer_auth_middleware,
     create_share,
     get_share,
     get_share_info,
@@ -427,3 +428,184 @@ class TestListShares:
         share = result["shares"][0]
         expected_keys = {"id", "url", "created_at", "valid_until", "protected"}
         assert set(share.keys()) == expected_keys
+
+
+class TestMcpBearerAuth:
+    """HTTP-level Bearer auth for the MCP ASGI middleware.
+
+    Tests ``_bearer_auth_middleware`` directly using mock ASGI scope/send
+    rather than the full Streamable HTTP stack, avoiding anyio task-group
+    and URL-parsing issues.
+    """
+
+    _VALID_TOKEN = "test-master-password"  # set by conftest.py
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_scope(*, auth_header: str | None = None) -> dict:
+        """Build a minimal HTTP ASGI scope, optionally with an Authorization
+        header."""
+        headers: list[tuple[bytes, bytes]] = [
+            (b"content-type", b"application/json"),
+        ]
+        if auth_header is not None:
+            headers.append((b"authorization", auth_header.encode()))
+        return {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/api/mcp",
+            "headers": headers,
+            "query_string": b"",
+            "client": ("127.0.0.1", 50000),
+            "server": ("localhost", 8080),
+        }
+
+    @staticmethod
+    def _make_send_collector():
+        """Return a ``(events, send)`` pair where *events* collects every
+        event passed to *send*."""
+        events: list[dict] = []
+
+        async def send(event: dict) -> None:
+            events.append(event)
+
+        return events, send
+
+    # ------------------------------------------------------------------
+    # Rejection cases (all should yield 401 + JSON error, never call inner)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_no_auth_header_returns_401(self):
+        """Request without any Authorization header is rejected."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        events, send = self._make_send_collector()
+        await wrapped(self._make_scope(), None, send)
+
+        assert len(events) == 2
+        assert events[0]["type"] == "http.response.start"
+        assert events[0]["status"] == 401
+        assert b"unauthorized" in events[1]["body"]
+        assert not inner_called
+
+    @pytest.mark.asyncio
+    async def test_wrong_bearer_token_returns_401(self):
+        """Request with an incorrect Bearer token is rejected."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        scope = self._make_scope(auth_header="Bearer wrong-token")
+        events, send = self._make_send_collector()
+        await wrapped(scope, None, send)
+
+        assert events[0]["status"] == 401
+        assert b"unauthorized" in events[1]["body"]
+        assert not inner_called
+
+    @pytest.mark.asyncio
+    async def test_wrong_auth_scheme_returns_401(self):
+        """Request with Basic auth (not Bearer) is rejected."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        scope = self._make_scope(auth_header="Basic dGVzdDp0ZXN0")
+        events, send = self._make_send_collector()
+        await wrapped(scope, None, send)
+
+        assert events[0]["status"] == 401
+        assert b"unauthorized" in events[1]["body"]
+        assert not inner_called
+
+    @pytest.mark.asyncio
+    async def test_empty_bearer_token_returns_401(self):
+        """Request with ``Bearer `` but no actual token is rejected."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        scope = self._make_scope(auth_header="Bearer ")
+        events, send = self._make_send_collector()
+        await wrapped(scope, None, send)
+
+        assert events[0]["status"] == 401
+        assert not inner_called
+
+    @pytest.mark.asyncio
+    async def test_malformed_auth_header_returns_401(self):
+        """Request with a junk Authorization header is rejected."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        scope = self._make_scope(auth_header="not-a-bearer-token")
+        events, send = self._make_send_collector()
+        await wrapped(scope, None, send)
+
+        assert events[0]["status"] == 401
+        assert not inner_called
+
+    # ------------------------------------------------------------------
+    # Non-HTTP scope (lifespan, websocket) passes through
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_non_http_scope_passes_through(self):
+        """Lifespan events are forwarded to the inner app unauthenticated."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        lifespan_scope = {
+            "type": "lifespan",
+            "asgi": {"version": "3.0"},
+        }
+        await wrapped(lifespan_scope, None, lambda _: None)
+        assert inner_called
+
+    # ------------------------------------------------------------------
+    # Acceptance case
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_token_calls_inner(self):
+        """Request with a valid Bearer token passes through to inner app."""
+        inner_called = False
+
+        async def inner_app(scope, receive, send):
+            nonlocal inner_called
+            inner_called = True
+
+        wrapped = _bearer_auth_middleware(inner_app)
+        scope = self._make_scope(
+            auth_header=f"Bearer {TestMcpBearerAuth._VALID_TOKEN}",
+        )
+        await wrapped(scope, None, lambda _: None)
+        assert inner_called

@@ -14,7 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from backend.config import config
-from backend.services.auth import verify_master_password
+from backend.services.auth import extract_bearer_token, verify_master_password
 from backend.services.image_handler import save_base64_image, rewrite_image_urls
 from backend.services.share_service import ShareService
 from backend.storage import get_storage
@@ -212,7 +212,47 @@ async def list_shares(master_password: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# ASGI Bearer-auth middleware
+# ---------------------------------------------------------------------------
+
+
+async def _send_401(send: Any) -> None:
+    """Send a 401 Unauthorized JSON response."""
+    await send({
+        "type": "http.response.start",
+        "status": 401,
+        "headers": [(b"content-type", b"application/json")],
+    })
+    await send({
+        "type": "http.response.body",
+        "body": b'{"error":"unauthorized"}',
+    })
+
+
+def _bearer_auth_middleware(inner_app: Any) -> Any:
+    """Wrap an ASGI app with Bearer token authentication.
+
+    Uses the shared ``extract_bearer_token`` + ``verify_master_password``
+    from ``backend.services.auth`` — the same logic used by the Flask API
+    routes.
+    """
+    async def middleware(scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await inner_app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        auth_header = headers.get(b"authorization", b"").decode(errors="replace")
+        token = extract_bearer_token(auth_header)
+        if not verify_master_password(token):
+            await _send_401(send)
+            return
+        await inner_app(scope, receive, send)
+
+    return middleware
+
+
+# ---------------------------------------------------------------------------
 # Export ASGI app
 # ---------------------------------------------------------------------------
 
-mcp_app = mcp.streamable_http_app()
+mcp_app = _bearer_auth_middleware(mcp.streamable_http_app())
