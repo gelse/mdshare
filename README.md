@@ -144,6 +144,18 @@ List all active (non-expired) shares. Requires master password authentication.
 |--------|---------|
 | 401 | Missing or invalid `Authorization` header |
 
+### `GET /api/docs/`
+
+Auto-generated Swagger UI documentation for the entire REST API. Browse all endpoints, inspect request/response schemas, and use the **Authorize** button to set your Bearer token for interactive try-out.
+
+The OpenAPI specification is rendered via Flasgger (Swagger 2.0) and includes:
+
+- **Try it out** for all endpoints — click **Authorize** and paste `Bearer <MDSHARE_MASTER_PASSWORD>` to enable authenticated requests
+- **Request schemas** — JSON bodies, query parameters, path parameters, and multipart form fields documented
+- **Response schemas** — Status codes and response body structures for every endpoint
+
+No authentication required to view the documentation.
+
 ## Configuration
 
 | Variable | Required | Default | Description |
