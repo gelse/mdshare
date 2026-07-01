@@ -14,6 +14,7 @@ from backend.storage import get_storage
 from backend.services.share_service import ShareService
 from backend.services.auth import extract_bearer_token, verify_master_password, verify_view_password
 from backend.services.image_handler import save_uploaded_image
+from flasgger import Swagger
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -24,6 +25,37 @@ app = Flask(__name__, static_folder=None)  # we serve static files explicitly
 app.wsgi_app = ProxyFix(
     app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1,
 )
+
+# ---------------------------------------------------------------------------
+# Swagger / OpenAPI documentation
+# ---------------------------------------------------------------------------
+
+swagger_config = {
+    "headers": [],
+    "specs": [{"endpoint": "apispec", "route": "/apispec.json"}],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/api/docs/",
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "mdshare API",
+        "description": "Minimal, self-hosted Markdown sharing service.",
+        "version": "1.0.0",
+    },
+    "securityDefinitions": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Master password as Bearer token. Format: `Bearer <your-master-password>`",
+        }
+    },
+}
+
+Swagger(app, config=swagger_config, template=swagger_template)
 
 # ---------------------------------------------------------------------------
 # Storage & services
@@ -81,7 +113,17 @@ def _base_url() -> str:
 
 @app.route("/api/health")
 def health():
-    """Health check endpoint."""
+    """Health check endpoint.
+    ---
+    tags: [Health]
+    responses:
+      200:
+        description: Service is healthy
+        schema:
+          type: object
+          properties:
+            status: {type: string, example: ok}
+    """
     return jsonify({"status": "ok"})
 
 
@@ -101,7 +143,19 @@ def view_page(doc_id: str):
 
 @app.route("/v/<doc_id>/raw")
 def view_raw(doc_id: str):
-    """Return raw Markdown content for a share."""
+    """Return raw Markdown content for a share.
+    ---
+    tags: [View]
+    parameters:
+      - {name: doc_id, in: path, type: string, required: true, description: Share ID}
+      - {name: pw, in: query, type: string, required: false, description: Password for protected shares}
+    responses:
+      200:
+        description: Raw Markdown content
+        schema: {type: string}
+      403: {description: Incorrect password}
+      404: {description: Share not found}
+    """
     doc = storage.get(doc_id)
     if doc is None:
         return jsonify({"error": "not found"}), 404
@@ -152,6 +206,29 @@ def share():
     401      Invalid or missing master password.
     413      Content exceeds size limit.
     =======  ==================================
+    ---
+    tags: [Share]
+    security:
+      - Bearer: []
+    consumes:
+      - multipart/form-data
+    parameters:
+      - {name: content, in: formData, type: string, required: true, description: Raw Markdown text}
+      - {name: protected, in: formData, type: string, enum: [yes, no], default: no, description: Password-protect the share}
+      - {name: ttl, in: formData, type: integer, default: 168, description: Time-to-live in hours}
+      - {name: file, in: formData, type: file, description: Image files referenced in the Markdown}
+    responses:
+      201:
+        description: Share created
+        schema:
+          type: object
+          properties:
+            url: {type: string, example: https://example.com/v/abc123}
+            password: {type: string}
+            valid_until: {type: string, format: date-time}
+      400: {description: Missing content or invalid TTL}
+      401: {description: Invalid or missing master password}
+      413: {description: Content exceeds size limit}
     """
     if not _check_master_auth():
         return jsonify({"error": "unauthorized"}), 401
@@ -219,15 +296,28 @@ def share():
 @app.route("/api/admin/shares")
 def list_shares():
     """List all active (non-expired) shares.
-
-    **Auth**: ``Authorization: Bearer <master-password>`` header.
-
-    **Response** (200):
-        ``{"shares": [...], "count": N}`` — each entry has id, url,
-        created_at, valid_until, and protected flag.
-
-    **Errors**:
-        - 401 — missing or invalid master password
+    ---
+    tags: [Admin]
+    security:
+      - Bearer: []
+    responses:
+      200:
+        description: List of active shares
+        schema:
+          type: object
+          properties:
+            shares:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: string}
+                  url: {type: string}
+                  created_at: {type: string}
+                  valid_until: {type: string}
+                  protected: {type: boolean}
+            count: {type: integer}
+      401: {description: Missing or invalid master password}
     """
     if not _check_master_auth():
         return jsonify({"error": "unauthorized"}), 401
