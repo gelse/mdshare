@@ -7,6 +7,11 @@ venv/
 # Documentation
 docs/TASK_LOG.md
 
+# Internal directories (not for public release)
+docs/
+plans/
+.forgejo/
+
 # Data
 data/
 

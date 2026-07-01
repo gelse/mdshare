@@ -19,7 +19,7 @@ Share AI-generated Markdown instantly. One `curl` command, one URL. No accounts,
 
 ```bash
 # Clone and start
-git clone https://forgejo.gelse.local/werner/mdshare.git
+git clone https://github.com/gelse/mdshare.git
 cd mdshare
 echo "MDSHARE_MASTER_PASSWORD=your-secret-password" > .env
 docker compose up -d
@@ -353,7 +353,6 @@ python -m pytest tests/integration/ -v -m integration
 
 The [`integration_base_url`](tests/integration/conftest.py) fixture reads `DEPLOYMENT_HOST` from the environment. If unset, all integration tests are skipped. Before yielding, the fixture polls `GET /api/health` (up to 30 seconds) to confirm the deployment is reachable, so you can run the command as soon as the container starts.
 
-**CI usage:** The [`integration-test.yml`](.forgejo/workflows/integration-test.yml) workflow is triggered manually via `workflow_dispatch` with `deployment_host` and `deployment_master_password` inputs.
 
 ## Database Migration
 

@@ -11,9 +11,3 @@ RUN apt-get update \
 
 # Switch to non-root user vscode (default user in Microsoft's Python devcontainer image)
 USER vscode
-
-# Pre-create bind mount target directories
-RUN mkdir -p /home/vscode/.roo/skills \
-    && mkdir -p /home/vscode/.vscode-server/data/User/globalStorage/zoocodeorganization.zoo-code/settings
-
-

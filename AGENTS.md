@@ -52,13 +52,7 @@ mdshare/                          # Project root
 │       ├── __init__.py           # Package marker
 │       ├── conftest.py           # Docker container lifecycle fixtures
 │       └── test_api.py           # HTTP API integration tests
-├── docs/                         # Project documentation
-│   └── TASK_LOG.md               # Chronological task/change history
 ├── .devcontainer/                # VS Code devcontainer config
-├── .forgejo/                     # Forgejo Actions CI workflows
-│   └── workflows/
-│       ├── unittest.yml          # CI: run unit tests, upload JUnit
-│       └── integration-test.yml  # CI: run integration tests
 └── .gitignore
 ```
 
@@ -154,7 +148,6 @@ mdshare/                          # Project root
 ### Paths & Imports
 - **Python imports always use lowercase**: `from backend.storage import get_storage`
 - **Dockerfile COPY commands use lowercase**: `COPY backend/ /app/backend/`
-- **Documentation lives in `docs/`** (lowercase)
 - **Test files in `backend/__tests__/`** (lowercase, double-underscore pytest convention)
 - **Storage backends in `backend/storage/`** (lowercase)
 
@@ -189,7 +182,7 @@ Images stored on filesystem at `{MDSHARE_DATA_DIR}/images/{doc_id}/{filename}`.
 ### Git Practices
 - Commit after every completed task/subtask
 - Short, concise commit messages in imperative mood
-- Repository hosted on Forgejo at `forgejo.gelse.local/werner/mdshare`
+- Repository hosted at `https://github.com/gelse/mdshare`
 
 ---
 
@@ -248,7 +241,6 @@ Integration tests live in `tests/integration/` and test an externally-deployed m
 - **Location**: `tests/integration/`
 - **Purpose**: Run all HTTP endpoint tests (health, upload, view, raw, images, themes) against a **separately deployed** mdshare container
 - **How to run**: `make test-integration` (requires `DEPLOYMENT_HOST` env var)
-- **CI**: `.forgejo/workflows/integration-test.yml` (manual trigger via `workflow_dispatch` only)
 - **Marker**: All integration tests use `@pytest.mark.integration` (already defined in `pytest.ini`)
 - **Architecture**: Session-scoped fixture in `conftest.py` reads the `DEPLOYMENT_HOST` environment variable and polls `/api/health` until the deployment is ready. **No Docker CLI calls** — the container is expected to be managed externally.
 - **Environment variables**:
@@ -265,7 +257,7 @@ Integration tests live in `tests/integration/` and test an externally-deployed m
 
 2. **VS Code display quirk**: VS Code may show directories as `Backend/`, `Docs/`, `Frontend/`, `Scripts/` in the explorer, but the actual filesystem paths are `backend/`, `docs/`, `frontend/`, `scripts/`. Always use lowercase in commands, imports, and configs.
 
-3. **All paths relative to project root**: `/home/werner/dev/mdshare/`
+3. **All paths relative to project root**
 
 4. **Key config files**:
    - `docker-compose.yml` — single service definition
@@ -275,8 +267,6 @@ Integration tests live in `tests/integration/` and test an externally-deployed m
    - `backend/requirements.txt` — runtime Python dependencies (Flask, gunicorn, bcrypt, python-multipart)
    - `requirements-dev.txt` — development dependencies (pytest, pytest-cov, httpx)
    - `tests/` — integration test suite (external deployment HTTP tests)
-   - `.forgejo/workflows/unittest.yml` — CI pipeline (unit tests)
-   - `.forgejo/workflows/integration-test.yml` — CI pipeline (manual trigger, requires external deployment)
 
 5. **Data storage**: SQLite database at `{MDSHARE_DATA_DIR}/mdshare.db`. Images at `{MDSHARE_DATA_DIR}/images/{doc_id}/{filename}`.
 
