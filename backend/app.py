@@ -153,15 +153,21 @@ def view_raw(doc_id: str):
       200:
         description: Raw Markdown content
         schema: {type: string}
-      403: {description: Incorrect password}
+      401: {description: Password required or incorrect}
       404: {description: Share not found}
     """
     doc = storage.get(doc_id)
     if doc is None:
         return jsonify({"error": "not found"}), 404
 
-    if not _check_view_auth(doc):
-        return jsonify({"error": "incorrect password"}), 403
+    # Differentiate between missing password and wrong password
+    pw_hash = doc.get("password")
+    if pw_hash:
+        given = request.args.get("pw", "")
+        if not given:
+            return jsonify({"error": "password required"}), 401
+        if not verify_view_password(given, pw_hash):
+            return jsonify({"error": "incorrect password"}), 401
 
     return doc["content"], 200, {"Content-Type": "text/plain; charset=utf-8"}
 

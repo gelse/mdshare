@@ -47,7 +47,7 @@ class TestViewRawAuth:
             make_document(content="# Secret", password="correct-pw-hash"),
         )
         resp = client.get("/v/wr0ng1234567/raw?pw=wrong-password")
-        assert resp.status_code == 403
+        assert resp.status_code == 401
         assert resp.get_json()["error"] == "incorrect password"
 
     def test_missing_password_returns_401(self, client):
@@ -56,8 +56,8 @@ class TestViewRawAuth:
             make_document(content="# Secret", password="correct-pw-hash"),
         )
         resp = client.get("/v/nopw12345678/raw")
-        assert resp.status_code == 403
-        assert resp.get_json()["error"] == "incorrect password"
+        assert resp.status_code == 401
+        assert resp.get_json()["error"] == "password required"
 
     def test_public_share_needs_no_password(self, client):
         """Public share with no password set should be accessible without pw."""
