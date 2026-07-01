@@ -7,6 +7,20 @@ import bcrypt
 from backend.config import config
 
 
+def extract_bearer_token(header_value: str) -> str | None:
+    """Parse a Bearer token from an ``Authorization`` header value.
+
+    Returns the token string if the header starts with ``"Bearer "``,
+    or ``None`` if the header is missing, malformed, or uses a different
+    scheme.  An empty token after the ``"Bearer "`` prefix is also
+    treated as ``None``.
+    """
+    if not header_value or not header_value.startswith("Bearer "):
+        return None
+    token = header_value[7:]  # strip "Bearer " prefix
+    return token or None
+
+
 def verify_master_password(token: str | None) -> bool:
     """Verify a Bearer token against the configured master password.
 

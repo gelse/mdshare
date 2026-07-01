@@ -12,7 +12,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from backend.config import config
 from backend.storage import get_storage
 from backend.services.share_service import ShareService
-from backend.services.auth import verify_master_password, verify_view_password
+from backend.services.auth import extract_bearer_token, verify_master_password, verify_view_password
 from backend.services.image_handler import save_uploaded_image
 
 # ---------------------------------------------------------------------------
@@ -40,9 +40,7 @@ share_service = ShareService(storage)
 def _check_master_auth() -> bool:
     """Verify the ``Authorization: Bearer`` header in the current request."""
     auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        return False
-    token = auth[7:]  # strip "Bearer " prefix
+    token = extract_bearer_token(auth)
     return verify_master_password(token)
 
 

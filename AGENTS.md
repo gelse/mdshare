@@ -160,6 +160,7 @@ mdshare/                          # Project root
 
 ### Authentication
 - **Upload**: `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` header
+- **MCP (Streamable HTTP)**: `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` header on `/api/mcp` — same Bearer token as Upload; enforced via ASGI middleware wrapping `mcp.streamable_http_app()`
 - **View (protected)**: `?pw=<password>` query parameter on `/v/<id>/raw`
 - Master password verified with `secrets.compare_digest` (timing-safe)
 - View password stored as bcrypt hash in SQLite

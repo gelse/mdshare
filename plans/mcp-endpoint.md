@@ -2,7 +2,7 @@
 
 > **Status**: ✅ Final — implemented
 > **Created**: 2026-06-29T06:31:00Z
-> **Updated**: 2026-07-01T06:38:00Z — Added `master_password` auth to `create_share`
+> **Updated**: 2026-07-01T15:19:00Z — Added HTTP Bearer auth middleware wrapping the MCP endpoint
 > **Target**: Allow AI agents (Claude, Roo Code, etc.) to interact with mdshare via the Model Context Protocol over HTTP
 
 ---
@@ -56,6 +56,9 @@ The MCP server is an **ASGI sub-application** mounted alongside Flask in the sam
 | Server | **uvicorn** (replaces gunicorn) | Native ASGI support; same process serves Flask (via `WsgiToAsgi`) + MCP |
 | MCP integration | **ASGI sub-app** via simple dispatch | Minimal code; no second process or port |
 | Storage access | **Direct import** of `backend.storage` | Same DB, same image FS, no HTTP overhead between Flask and MCP |
+| HTTP transport auth | **ASGI Bearer middleware** via `_bearer_auth_middleware()` | Wraps `mcp.streamable_http_app()`, rejects non-Bearer or wrong-token requests with 401 before they reach MCP tools; shares `extract_bearer_token()` with Flask's `_check_master_auth()` |
+
+**HTTP-level authentication**: An ASGI Bearer token middleware (`_bearer_auth_middleware`) wraps the entire MCP application. Every HTTP request to `/api/mcp` must include an `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` header. Requests without a header, with a wrong token, or with a non-Bearer scheme receive a 401 response before reaching any MCP tool. The middleware shares `extract_bearer_token()` with Flask's `_check_master_auth()`, ensuring consistent Bearer parsing across both APIs. Tool-level `master_password` parameters are retained for defense in depth.
 
 ### 2.2 Why Not stdio?
 
@@ -204,10 +207,14 @@ async def health_check() -> dict:
     # probe storage
     return {"status": "ok", "storage": "sqlite", ...}
 
-mcp_app = mcp.streamable_http_app()
+# The app is wrapped in an ASGI Bearer auth middleware that rejects
+# unauthenticated requests before they reach any MCP tool.
+mcp_app = _bearer_auth_middleware(mcp.streamable_http_app())
 ```
 
 ### 5.2 New File: [`backend/asgi.py`](backend/asgi.py) (~25 lines)
+
+> **Note**: The `mcp_app` imported below is already wrapped in `_bearer_auth_middleware` (defined in `mcp_server.py`), so the ASGI dispatch layer transparently enforces Bearer auth on all `/api/mcp` requests.
 
 Minimal ASGI dispatch that routes MCP requests to the MCP app and everything else to Flask (wrapped as ASGI):
 
@@ -261,6 +268,7 @@ Tests using **direct function calls** (not HTTP) to the MCP tool functions, bypa
 - `TestGetShare` — retrieve public & protected shares, wrong/missing password, not found
 - `TestGetShareInfo` — existing & non-existing shares, empty ID
 - `TestHealthCheck` — verify `status: "ok"` response
+- `TestMcpBearerAuth` — 7 tests for HTTP Bearer auth middleware (no auth header, wrong token, wrong scheme, empty token, malformed header, non-HTTP passthrough, valid token)
 - Uses `pytest-asyncio` with `@pytest.mark.asyncio` on each async test
 - Reuses `reset_storage` autouse fixture from `conftest.py`
 - No `httpx.ASGITransport` dependency — pure business-logic testing
@@ -310,6 +318,7 @@ All open questions resolved (2026-06-29T09:05:00Z):
 | 3 | `get_share_info` design | **Separate tool** | Clearer intent, no conditional return types, simpler signatures |
 | 4 | gunicorn vs uvicorn | **uvicorn directly** | Simpler dependency chain, equivalent production behavior with `--workers` |
 | 5 | MCP create_share auth | **Require `master_password` param** | Caller must pass master password; verified with timing-safe `secrets.compare_digest()` — same mechanism as Flask route |
+| 6 | MCP HTTP transport auth | **ASGI Bearer middleware** wrapping `mcp.streamable_http_app()` | Every `/api/mcp` request requires `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>`; shares `extract_bearer_token()` with Flask; tool-level `master_password` retained for defense in depth |
 
 ## 8. Summary
 
@@ -319,10 +328,11 @@ All open questions resolved (2026-06-29T09:05:00Z):
 | Integration model | ASGI sub-app in same process (no second container or port) |
 | WSGI → ASGI bridge | `asgiref.wsgi.WsgiToAsgi` wrapping Flask |
 | Server | **uvicorn** (replaces gunicorn) |
+| HTTP auth | **ASGI Bearer middleware** —every request to `/api/mcp` requires `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` |
 | Tools | `create_share`, `get_share`, `get_share_info`, `health_check` |
 | New dependencies | `mcp>=1.0.0`, `uvicorn>=0.30.0`, `asgiref>=3.0` |
 | Removed dependencies | `gunicorn>=22.0` |
 | New files | `backend/mcp_server.py` (~225 lines), `backend/asgi.py` (~15 lines), `backend/__tests__/test_mcp_server.py` |
 | Modified files | `backend/requirements.txt`, `Dockerfile` (CMD line) |
 | Docker changes | 1 line changed in Dockerfile; no docker-compose changes |
-| Configuration | Same env vars as Flask app; `master_password` caller-supplied for MCP `create_share` |
+| Configuration | Same env vars as Flask app; `master_password` caller-supplied for MCP `create_share`; Bearer token header also authenticated |
