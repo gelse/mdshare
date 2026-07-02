@@ -21,40 +21,16 @@ from backend.mcp_server import (
 )
 
 # conftest.py sets MDSHARE_MASTER_PASSWORD="test-master-password"
-_VALID_PW = "test-master-password"
 
 
 class TestCreateShare:
     """Tests for :func:`create_share` tool function."""
 
     @pytest.mark.asyncio
-    async def test_missing_master_password_returns_error(self):
-        """Empty master_password returns unauthorized error."""
-        result = await create_share(
-            content="# Hello",
-            master_password="",
-            protected=False,
-        )
-        assert "error" in result
-        assert "invalid master password" in result["error"].lower()
-
-    @pytest.mark.asyncio
-    async def test_wrong_master_password_returns_error(self):
-        """Invalid master password returns unauthorized error."""
-        result = await create_share(
-            content="# Hello",
-            master_password="wrong-password",
-            protected=False,
-        )
-        assert "error" in result
-        assert "invalid master password" in result["error"].lower()
-
-    @pytest.mark.asyncio
     async def test_public_share_returns_url_and_id(self):
         """Public share creation returns id and url, no password."""
         result = await create_share(
             content="# Hello World",
-            master_password=_VALID_PW,
             protected=False,
         )
         assert "id" in result
@@ -67,7 +43,6 @@ class TestCreateShare:
         """Protected share creation returns a password field."""
         result = await create_share(
             content="Secret content",
-            master_password=_VALID_PW,
             protected=True,
         )
         assert "id" in result
@@ -81,7 +56,6 @@ class TestCreateShare:
         """Empty content returns error dict, not success."""
         result = await create_share(
             content="",
-            master_password=_VALID_PW,
             protected=False,
         )
         assert "error" in result
@@ -92,7 +66,6 @@ class TestCreateShare:
         """Whitespace-only content returns error dict."""
         result = await create_share(
             content="   \n  \t  ",
-            master_password=_VALID_PW,
             protected=False,
         )
         assert "error" in result
@@ -103,7 +76,6 @@ class TestCreateShare:
         monkeypatch.setattr("backend.services.share_service.config", Config(max_size=10))
         result = await create_share(
             content="x" * 100,
-            master_password=_VALID_PW,
             protected=False,
         )
         assert "error" in result
@@ -114,7 +86,6 @@ class TestCreateShare:
         """Image dict parameter is accepted and processed."""
         result = await create_share(
             content="Text with ![img](test.png)",
-            master_password=_VALID_PW,
             protected=False,
             images=["data:image/png;filename=test.png;base64,cGxhY2Vob2xkZXI="],
         )
@@ -127,7 +98,6 @@ class TestCreateShare:
         """Invalid base64 image data returns error."""
         result = await create_share(
             content="Text with ![img](bad.png)",
-            master_password=_VALID_PW,
             protected=False,
             images=["data:image/png;filename=bad.png;base64,not-valid-base64!!!@@@"],
         )
@@ -140,7 +110,6 @@ class TestCreateShare:
         monkeypatch.setattr("backend.mcp_server.config", Config(max_size=10))
         result = await create_share(
             content="Hi",  # 2 bytes, well under the 10-byte limit
-            master_password=_VALID_PW,
             protected=False,
             # 1000 bytes base64 → triggers limit
             images=["data:image/png;filename=img.png;base64," + "A" * 1000],
@@ -153,7 +122,6 @@ class TestCreateShare:
         """Default TTL produces a valid_until ISO 8601 string."""
         result = await create_share(
             content="# TTL test",
-            master_password=_VALID_PW,
             protected=False,
         )
         assert "valid_until" in result
@@ -167,7 +135,6 @@ class TestCreateShare:
         """Custom ttl_hours=2 produces a valid_until ~2 hours in future."""
         result = await create_share(
             content="# Custom TTL",
-            master_password=_VALID_PW,
             protected=False,
             ttl_hours=2,
         )
@@ -184,7 +151,6 @@ class TestCreateShare:
         """ttl_hours=0 means no expiry → valid_until is None."""
         result = await create_share(
             content="# No expiry",
-            master_password=_VALID_PW,
             protected=False,
             ttl_hours=0,
         )
@@ -201,7 +167,6 @@ class TestGetShare:
         """Public share returns content and metadata."""
         created = await create_share(
             content="Test content",
-            master_password=_VALID_PW,
             protected=False,
         )
         result = await get_share(share_id=created["id"])
@@ -215,7 +180,6 @@ class TestGetShare:
         """Protected share returns content when correct password given."""
         created = await create_share(
             content="Secret",
-            master_password=_VALID_PW,
             protected=True,
         )
         result = await get_share(share_id=created["id"], password=created["password"])
@@ -228,7 +192,6 @@ class TestGetShare:
         """Protected share without password returns password required error."""
         created = await create_share(
             content="Secret",
-            master_password=_VALID_PW,
             protected=True,
         )
         result = await get_share(share_id=created["id"])
@@ -240,7 +203,6 @@ class TestGetShare:
         """Protected share with wrong password returns error."""
         created = await create_share(
             content="Secret",
-            master_password=_VALID_PW,
             protected=True,
         )
         result = await get_share(share_id=created["id"], password="wrongpass")
@@ -270,7 +232,6 @@ class TestGetShareInfo:
         """Existing share returns metadata without content."""
         created = await create_share(
             content="Test",
-            master_password=_VALID_PW,
             protected=False,
         )
         result = await get_share_info(share_id=created["id"])
@@ -286,7 +247,6 @@ class TestGetShareInfo:
         """Protected share shows protected=True in info response."""
         created = await create_share(
             content="Test",
-            master_password=_VALID_PW,
             protected=True,
         )
         result = await get_share_info(share_id=created["id"])
@@ -342,37 +302,21 @@ class TestListShares:
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_shares(self):
         """No shares returns empty list with count 0."""
-        result = await list_shares(master_password=_VALID_PW)
+        result = await list_shares()
         assert result["shares"] == []
         assert result["count"] == 0
-
-    @pytest.mark.asyncio
-    async def test_missing_master_password_returns_error(self):
-        """Empty master_password returns error."""
-        result = await list_shares(master_password="")
-        assert "error" in result
-        assert "invalid master password" in result["error"].lower()
-
-    @pytest.mark.asyncio
-    async def test_wrong_master_password_returns_error(self):
-        """Invalid master password returns error."""
-        result = await list_shares(master_password="wrong-password")
-        assert "error" in result
-        assert "invalid master password" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_lists_public_and_protected_shares(self):
         """Both public and protected shares appear in listing with correct protected flag."""
         pub = await create_share(
             content="public content",
-            master_password=_VALID_PW,
         )
         prot = await create_share(
             content="protected content",
-            master_password=_VALID_PW,
             protected=True,
         )
-        result = await list_shares(master_password=_VALID_PW)
+        result = await list_shares()
         assert result["count"] >= 2
         shares_by_id = {s["id"]: s for s in result["shares"]}
         assert pub["id"] in shares_by_id
@@ -385,9 +329,8 @@ class TestListShares:
         """Each share has a url field that is a non-empty string."""
         await create_share(
             content="# Hello",
-            master_password=_VALID_PW,
         )
-        result = await list_shares(master_password=_VALID_PW)
+        result = await list_shares()
         assert len(result["shares"]) == 1
         share = result["shares"][0]
         assert "url" in share
@@ -402,7 +345,6 @@ class TestListShares:
         # Create a valid share
         valid = await create_share(
             content="active share",
-            master_password=_VALID_PW,
         )
 
         # Directly insert an expired share bypassing the API
@@ -413,7 +355,7 @@ class TestListShares:
             "valid_until": "2020-01-01T00:00:00",
         })
 
-        result = await list_shares(master_password=_VALID_PW)
+        result = await list_shares()
         share_ids = {s["id"] for s in result["shares"]}
         assert valid["id"] in share_ids
         assert "expired-test-id" not in share_ids
@@ -423,9 +365,8 @@ class TestListShares:
         """Each share dict contains expected keys."""
         await create_share(
             content="schema test",
-            master_password=_VALID_PW,
         )
-        result = await list_shares(master_password=_VALID_PW)
+        result = await list_shares()
         assert len(result["shares"]) == 1
         share = result["shares"][0]
         expected_keys = {"id", "url", "created_at", "valid_until", "protected"}

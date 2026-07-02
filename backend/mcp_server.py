@@ -52,14 +52,11 @@ def _share_url(share_id: str) -> str:
 @mcp.tool()
 async def create_share(
     content: str,
-    master_password: str,
     protected: bool = False,
     images: list[str] | None = None,
     ttl_hours: int | None = None,
 ) -> dict[str, Any]:
-    """Create new share from tool arguments."""
-    if not verify_master_password(master_password):
-        return {"error": "Invalid master password"}
+    """Create new share from tool arguments. Auth via Bearer token."""
 
     doc_id = service.generate_id()
     filenames: set[str] = set()
@@ -188,10 +185,8 @@ async def health_check() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def list_shares(master_password: str) -> dict[str, Any]:
-    """List all active shares."""
-    if not verify_master_password(master_password):
-        return {"error": "Invalid master password"}
+async def list_shares() -> dict[str, Any]:
+    """List all active shares. Auth via Bearer token."""
 
     shares = service.list_shares()
 
