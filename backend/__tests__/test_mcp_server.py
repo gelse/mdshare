@@ -100,7 +100,7 @@ class TestCreateShare:
     @pytest.mark.asyncio
     async def test_content_exceeds_max_size(self, monkeypatch):
         """Content exceeding MAX_CONTENT_SIZE returns error."""
-        monkeypatch.setattr("backend.mcp_server.config", Config(max_size=10))
+        monkeypatch.setattr("backend.services.share_service.config", Config(max_size=10))
         result = await create_share(
             content="x" * 100,
             master_password=_VALID_PW,
@@ -362,7 +362,7 @@ class TestListShares:
 
     @pytest.mark.asyncio
     async def test_lists_public_and_protected_shares(self):
-        """Both public and protected shares appear in listing."""
+        """Both public and protected shares appear in listing with correct protected flag."""
         pub = await create_share(
             content="public content",
             master_password=_VALID_PW,
@@ -374,9 +374,11 @@ class TestListShares:
         )
         result = await list_shares(master_password=_VALID_PW)
         assert result["count"] >= 2
-        ids = {s["id"] for s in result["shares"]}
-        assert pub["id"] in ids
-        assert prot["id"] in ids
+        shares_by_id = {s["id"]: s for s in result["shares"]}
+        assert pub["id"] in shares_by_id
+        assert prot["id"] in shares_by_id
+        assert shares_by_id[pub["id"]]["protected"] is False
+        assert shares_by_id[prot["id"]]["protected"] is True
 
     @pytest.mark.asyncio
     async def test_share_has_url_field(self):

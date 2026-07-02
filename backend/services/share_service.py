@@ -104,6 +104,12 @@ class ShareService:
         if not content:
             raise ValueError("Content cannot be empty")
 
+        content_size = len(content.encode("utf-8"))
+        if content_size > config.max_size:
+            raise ValueError(
+                f"content exceeds max size of {config.max_size} bytes"
+            )
+
         doc_id = doc_id or self.generate_id()
         password = self.generate_password() if protected else None
         password_hash: str | None = (
