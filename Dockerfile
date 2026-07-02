@@ -14,6 +14,9 @@ COPY backend/ /app/backend/
 
 EXPOSE 5000
 
+ARG MDSHARE_VERSION=unknown
+ENV MDSHARE_VERSION=$MDSHARE_VERSION
+
 ENV PYTHONUNBUFFERED=1
 
 CMD ["uvicorn", "backend.asgi:app", "--host", "0.0.0.0", "--port", "5000", "--workers", "4", "--timeout-keep-alive", "30"]

@@ -126,6 +126,22 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/api/version")
+def version():
+    """Version information endpoint.
+    ---
+    tags: [Health]
+    responses:
+      200:
+        description: Version information
+        schema:
+          type: object
+          properties:
+            version: {type: string, example: "a1b2c3d"}
+    """
+    return jsonify({"version": config.version})
+
+
 @app.route("/themes.css")
 def themes():
     """Serve the CSS theme file."""
