@@ -55,6 +55,7 @@ async def create_share(
     protected: bool = False,
     images: list[str] | None = None,
     ttl_hours: int | None = None,
+    display_config: dict | None = None,
 ) -> dict[str, Any]:
     """Create new share from tool arguments. Auth via Bearer token."""
 
@@ -105,6 +106,7 @@ async def create_share(
             ttl_hours=ttl_hours,
             filenames=filenames,
             doc_id=doc_id,
+            display_config=display_config,
         )
     except ValueError as e:
         return {"error": str(e)}

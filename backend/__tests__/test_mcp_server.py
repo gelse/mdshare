@@ -159,6 +159,31 @@ class TestCreateShare:
         # or explicitly set to None (depends on response format)
         assert result.get("valid_until") is None
 
+    @pytest.mark.asyncio
+    async def test_display_config_passed_through(self):
+        """display_config overrides are passed through without error."""
+        result = await create_share(
+            content="# Test",
+            protected=False,
+            display_config={"theme": "dark", "code_line_numbers": True},
+        )
+        assert "id" in result
+        assert "url" in result
+        assert "error" not in result
+        # Verify share was stored by checking its info
+        info = await get_share_info(share_id=result["id"])
+        assert info["exists"] is True
+
+    @pytest.mark.asyncio
+    async def test_invalid_display_config_returns_error(self):
+        """Invalid display_config values return error, not success."""
+        result = await create_share(
+            content="# Test",
+            protected=False,
+            display_config={"theme": "blue"},
+        )
+        assert "error" in result
+
 
 class TestGetShare:
     """Tests for :func:`get_share` tool function."""
