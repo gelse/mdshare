@@ -1,5 +1,6 @@
 """SQLite storage backend for mdshare — single-table design."""
 
+import json
 import sqlite3
 import threading
 import os
@@ -14,11 +15,12 @@ class SqliteStorage(StorageBackend):
     Schema::
 
         CREATE TABLE shares (
-            id          TEXT PRIMARY KEY,
-            content     TEXT NOT NULL,
-            password    TEXT,           -- bcrypt hash, NULL if public
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            valid_until TEXT            -- ISO 8601 UTC expiry, NULL = never
+            id              TEXT PRIMARY KEY,
+            content         TEXT NOT NULL,
+            password        TEXT,           -- bcrypt hash, NULL if public
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            valid_until     TEXT,           -- ISO 8601 UTC expiry, NULL = never
+            display_config  TEXT            -- JSON dict of per-share display overrides, NULL = use global defaults
         );
     """
 
@@ -62,7 +64,30 @@ class SqliteStorage(StorageBackend):
             self._conn.execute("ALTER TABLE shares ADD COLUMN valid_until TEXT")
         except sqlite3.OperationalError:
             pass
+        # Migration: add display_config column to existing databases.
+        try:
+            self._conn.execute("ALTER TABLE shares ADD COLUMN display_config TEXT")
+        except sqlite3.OperationalError:
+            pass
         self._conn.commit()
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _serialize_display_config(d: dict | None) -> str | None:
+        """Serialize a display_config dict to JSON string (or None)."""
+        if d is None:
+            return None
+        return json.dumps(d, separators=(",", ":"))
+
+    @staticmethod
+    def _deserialize_display_config(s: str | None) -> dict | None:
+        """Deserialize a JSON string to a display_config dict (or None)."""
+        if s is None:
+            return None
+        return json.loads(s)
 
     # ------------------------------------------------------------------
     # StorageBackend interface
@@ -71,8 +96,14 @@ class SqliteStorage(StorageBackend):
     def create(self, doc_id: str, doc: dict) -> None:
         """Insert a new share."""
         self._conn.execute(
-            "INSERT INTO shares (id, content, password, valid_until) VALUES (?, ?, ?, ?)",
-            (doc_id, doc["content"], doc.get("password"), doc.get("valid_until")),
+            "INSERT INTO shares (id, content, password, valid_until, display_config) VALUES (?, ?, ?, ?, ?)",
+            (
+                doc_id,
+                doc["content"],
+                doc.get("password"),
+                doc.get("valid_until"),
+                self._serialize_display_config(doc.get("display_config")),
+            ),
         )
         self._conn.commit()
 
@@ -84,13 +115,18 @@ class SqliteStorage(StorageBackend):
         image files are deleted and None is returned.
         """
         row = self._conn.execute(
-            "SELECT id, content, password, created_at, valid_until FROM shares WHERE id = ?",
+            "SELECT id, content, password, created_at, valid_until, display_config FROM shares WHERE id = ?",
             (doc_id,),
         ).fetchone()
         if row is None:
             return None
 
         result = dict(row)
+
+        # Parse display_config from JSON if present
+        result["display_config"] = self._deserialize_display_config(
+            result.get("display_config")
+        )
 
         # Lazy expiry check
         valid_until = result.get("valid_until")

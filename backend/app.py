@@ -4,6 +4,7 @@ Thin Flask route layer — delegates business logic to ShareService,
 auth helpers, and image handlers.
 """
 
+import json
 import os
 
 from flask import Flask, request, jsonify, send_from_directory, abort
@@ -278,6 +279,15 @@ def share():
     else:
         ttl_hours = None  # use default in compute_valid_until
 
+    # Parse optional display-config JSON
+    raw_display = request.form.get("display_config", "")
+    display_config = None
+    if raw_display.strip():
+        try:
+            display_config = json.loads(raw_display)
+        except json.JSONDecodeError:
+            return jsonify({"error": "invalid display_config — must be valid JSON"}), 400
+
     # Collect uploaded filenames for URL rewriting
     filenames: set[str] = set()
     for key in request.files:
@@ -286,12 +296,16 @@ def share():
             filenames.add(file.filename)
 
     # Create share via service layer (generates ID, rewrites URLs, stores)
-    result = share_service.create_share(
-        content=content,
-        protected=protected,
-        ttl_hours=ttl_hours,
-        filenames=filenames,
-    )
+    try:
+        result = share_service.create_share(
+            content=content,
+            protected=protected,
+            ttl_hours=ttl_hours,
+            filenames=filenames,
+            display_config=display_config,
+        )
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
 
     doc_id = result["id"]
     view_password = result.get("password")
@@ -312,6 +326,35 @@ def share():
         ),
         201,
     )
+
+
+@app.route("/v/<doc_id>/config")
+def view_display_config(doc_id: str):
+    """Return display config for a share (global defaults + per-share overrides).
+
+    No auth required — same access level as viewing the page.
+    Always returns 200 with the full config object.
+    ---
+    tags: [View]
+    parameters:
+      - {name: doc_id, in: path, type: string, required: true, description: Share ID}
+    responses:
+      200:
+        description: Display configuration
+        schema:
+          type: object
+          properties:
+            font_family: {type: string}
+            font_size: {type: string}
+            line_height: {type: string}
+            max_width: {type: string}
+            theme: {type: string}
+            code_font_size: {type: string}
+            code_line_numbers: {type: boolean}
+            custom_css: {type: string}
+    """
+    config_dict = share_service.get_display_config(doc_id)
+    return jsonify(config_dict)
 
 
 @app.route("/api/admin/shares")

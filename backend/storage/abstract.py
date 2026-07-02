@@ -22,6 +22,9 @@ class StorageBackend(ABC):
                  - 'valid_until' (str | None): ISO 8601 datetime after which
                    the share should be treated as expired, or None for
                    shares that never expire (grandfathered rows).
+                 - 'display_config' (dict | None): Per-share display
+                   overrides (e.g. ``{"lineNumbers": true}``), or None to
+                   use global defaults.
         """
         ...
 
