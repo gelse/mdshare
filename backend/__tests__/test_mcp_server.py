@@ -16,6 +16,7 @@ from backend.mcp_server import (
     create_share,
     get_share,
     get_share_info,
+    get_version,
     health_check,
     list_shares,
 )
@@ -294,6 +295,17 @@ class TestHealthCheck:
         result = await health_check()
         assert result["status"] == "degraded"
         assert result["storage"] == "unreachable"
+
+
+class TestGetVersion:
+    """get_version() tool returns deployed version."""
+
+    @pytest.mark.asyncio
+    async def test_get_version_returns_string(self):
+        result = await get_version()
+        assert "version" in result
+        assert isinstance(result["version"], str)
+        assert len(result["version"]) > 0
 
 
 class TestListShares:

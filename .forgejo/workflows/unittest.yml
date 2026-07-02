@@ -11,27 +11,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build test Docker image
-        run: |
-          docker build -t mdshare:test -f- . <<'EOF'
-          FROM python:3.13-slim
-          COPY backend/ /app/backend/
-          COPY requirements-dev.txt /app/
-          RUN pip install --no-cache-dir -r /app/backend/requirements.txt -r /app/requirements-dev.txt
-          WORKDIR /app
-          CMD ["python", "-m", "pytest", "backend", "--junitxml=/app/junit.xml"]
-          EOF
-
-      - name: Run unit tests
-        run: |
-          mkdir -p test-results
-          docker run --name mdshare-test mdshare:test
-          docker cp mdshare-test:/app/junit.xml test-results/junit.xml
+      - name: Run unit tests (Docker)
+        run: make ci-unit-test
 
       - name: Cleanup docker
         if: always()
-        run: |
-          docker rm -f mdshare-test 2>/dev/null || true
+        run: docker rm -f mdshare-test 2>/dev/null || true
 
       - name: Upload test results
         uses: actions/upload-artifact@v3

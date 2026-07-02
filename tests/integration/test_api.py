@@ -76,6 +76,19 @@ class TestHealthEndpoint:
 
 
 @pytest.mark.integration
+class TestVersionEndpoint:
+    """``GET /api/version`` — public system info."""
+
+    def test_version_endpoint(self, integration_base_url: str) -> None:
+        resp = httpx.get(f"{integration_base_url}/api/version")
+        assert resp.status_code == 200
+        assert resp.headers.get("content-type", "").startswith("application/json")
+        data = resp.json()
+        assert "version" in data
+        assert isinstance(data["version"], str)
+
+
+@pytest.mark.integration
 class TestSwaggerDocs:
     """``GET /api/docs/`` and ``GET /apispec.json`` — Swagger UI and OpenAPI spec."""
 

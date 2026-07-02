@@ -184,25 +184,31 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-@mcp.tool()
-async def list_shares() -> dict[str, Any]:
-    """List all active shares. Auth via Bearer token."""
+    @mcp.tool()
+    async def get_version() -> dict[str, Any]:
+        """Return deployed mdshare version (git hash or release tag)."""
+        return {"version": config.version}
 
-    shares = service.list_shares()
 
-    share_list: list[dict[str, Any]] = []
-    for share in shares:
-        share_list.append(
-            {
-                "id": share["id"],
-                "url": _share_url(share["id"]),
-                "created_at": share["created_at"],
-                "valid_until": share["valid_until"],
-                "protected": share.get("protected", False),
-            }
-        )
+    @mcp.tool()
+    async def list_shares() -> dict[str, Any]:
+        """List all active shares. Auth via Bearer token."""
 
-    return {"shares": share_list, "count": len(share_list)}
+        shares = service.list_shares()
+
+        share_list: list[dict[str, Any]] = []
+        for share in shares:
+            share_list.append(
+                {
+                    "id": share["id"],
+                    "url": _share_url(share["id"]),
+                    "created_at": share["created_at"],
+                    "valid_until": share["valid_until"],
+                    "protected": share.get("protected", False),
+                }
+            )
+
+        return {"shares": share_list, "count": len(share_list)}
 
 
 # ---------------------------------------------------------------------------

@@ -39,6 +39,11 @@ class Config:
     #: Default TTL hours for new shares (168 = 7 days).
     default_ttl_hours: int = 168
 
+    #: Current version string — git hash (dev) or semver tag (release).
+    version: str = field(
+        default_factory=lambda: os.environ.get("MDSHARE_VERSION", "unknown"),
+    )
+
     #: Computed path to the SQLite database file.
     db_path: str = field(init=False)
 

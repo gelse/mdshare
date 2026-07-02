@@ -1,6 +1,9 @@
 services:
   mdshare:
-    build: .
+    build:
+      context: .
+      args:
+        MDSHARE_VERSION: ${MDSHARE_VERSION:-unknown}
     container_name: mdshare
     restart: unless-stopped
     # Remove ports mapping when running behind a reverse proxy (e.g. Traefik)

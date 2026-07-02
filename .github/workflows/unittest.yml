@@ -16,14 +16,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: |
-          pip install --no-cache-dir -r backend/requirements.txt -r requirements-dev.txt
-
       - name: Run unit tests
-        run: |
-          mkdir -p test-results
-          python -m pytest backend --junitxml=test-results/junit.xml
+        run: make ci-test-direct
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
