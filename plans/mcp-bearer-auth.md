@@ -1,15 +1,15 @@
 # Plan: Add HTTP Bearer Authentication to MCP Endpoint
 
-> **Status**: 📋 Planned — ready for implementation
+> **Status**: ✅ Implemented
 > **Created**: 2026-07-01T14:50:00Z
-> **Updated**: 2026-07-01T15:04:00Z — Refactored to reuse existing auth extraction logic
+> **Updated**: 2026-07-02T07:18:00Z — Tool-level `master_password` params removed; auth is middleware-only
 > **Target**: Enforce `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` at the HTTP transport level for all `/api/mcp` requests
 
 ---
 
 ## 1. Problem Statement
 
-The MCP endpoint (`/api/mcp`) currently has **no HTTP-level authentication**. The master password is passed as a tool function argument (`master_password: str`) and each tool individually calls `verify_master_password()`. This differs from the Flask API which uses proper HTTP Bearer authentication via the `Authorization: Bearer <token>` header.
+The MCP endpoint (`/api/mcp`) had **no HTTP-level authentication**. The master password was passed as a tool function argument (`master_password: str`) and each tool individually called `verify_master_password()`. This differed from the Flask API which used proper HTTP Bearer authentication via the `Authorization: Bearer <token>` header.
 
 Additionally, the Bearer token extraction logic lives **only** in Flask's `_check_master_auth()` at [`backend/app.py:40-46`](backend/app.py:40) — it's not reusable outside a Flask request context.
 
@@ -106,14 +106,16 @@ mcp_app = mcp.streamable_http_app()
 mcp_app = _bearer_auth_middleware(mcp.streamable_http_app())
 ```
 
-### 2.3 Why Keep Tool-Level `master_password` Parameter
+### 2.3 Post-Implementation: Tool-Level `master_password` Removed
+
+After implementation, the tool-level `master_password` parameter was **removed** from both `create_share` and `list_shares`. Rationale:
 
 | Reason | Detail |
 |--------|--------|
-| **Test compatibility** | Existing tests call MCP tool functions directly (not via HTTP) |
-| **Defense in depth** | Two independent auth layers — HTTP middleware + tool verification |
-| **Backward compatibility** | MCP clients already pass `master_password` — no breaking change |
-| **Non-HTTP contexts** | If tools are ever used outside HTTP (stdio transport), auth still works |
+| **Middleware alone is sufficient** | The ASGI Bearer middleware enforces auth before any tool code runs — no secondary check needed |
+| **Simpler API** | MCP clients no longer need to pass `master_password` as a tool argument |
+| **Token extraction** | `extract_bearer_token()` is shared between Flask and MCP middleware |
+| **Non-HTTP note** | If stdio transport is ever added, a separate auth layer would be needed at that transport level |
 
 ---
 
@@ -125,7 +127,10 @@ mcp_app = _bearer_auth_middleware(mcp.streamable_http_app())
 | 2 | [`backend/app.py`](backend/app.py:40) | Refactor `_check_master_auth()` to use `extract_bearer_token()` | ~3 changed |
 | 3 | [`backend/mcp_server.py`](backend/mcp_server.py:218) | Add `_bearer_auth_middleware()`, `_send_401()`, wrap `mcp_app` export | +35 |
 | 4 | [`backend/__tests__/test_mcp_server.py`](backend/__tests__/test_mcp_server.py:25) | Add `TestMcpBearerAuth` class with HTTP-level auth tests | +60 |
-| 5 | [`plans/mcp-endpoint.md`](plans/mcp-endpoint.md:322) | Update auth architecture section | ~5 changed |
+| 5 | [`backend/mcp_server.py`](backend/mcp_server.py:52) | Remove `master_password` param from `create_share` tool signature | ~5 changed |
+| 6 | [`backend/mcp_server.py`](backend/mcp_server.py:187) | Remove `master_password` param from `list_shares` tool signature | ~3 changed |
+| 7 | [`backend/__tests__/test_mcp_server.py`](backend/__tests__/test_mcp_server.py:30) | Delete 4 obsolete auth-param tests, strip `master_password=_VALID_PW` from calls | ~15 changed |
+| 8 | [`plans/mcp-endpoint.md`](plans/mcp-endpoint.md:322) | Update auth architecture section | ~5 changed |
 
 ### Files NOT Modified
 
@@ -133,7 +138,6 @@ mcp_app = _bearer_auth_middleware(mcp.streamable_http_app())
 |------|--------|
 | [`backend/asgi.py`](backend/asgi.py:1) | Middleware applied inside `mcp_server.py`, not at dispatch level |
 | [`backend/config.py`](backend/config.py:1) | `config.master_password` already used by `verify_master_password()` |
-| Existing MCP tool tests | Tools still accept `master_password` parameter — unchanged |
 | [`backend/__tests__/conftest.py`](backend/__tests__/conftest.py:15) | Flask test client already used; ASGI test client created in new test class |
 | `Dockerfile` | No new dependencies needed |
 
@@ -202,7 +206,7 @@ HTTP status: `401`
 |--------|--------|-------|
 | HTTP auth on `/api/mcp` | ❌ None | ✅ Bearer token |
 | Token extraction | Flask-only `_check_master_auth()` | Shared `extract_bearer_token()` in `auth.py` |
-| Tool-level auth | ✅ `master_password` param | ✅ unchanged (defense in depth) |
+| Tool-level auth | ✅ `master_password` param | ❌ removed (middleware-only auth) |
 | Flask API auth | ✅ Bearer | ✅ Bearer (refactored, same behavior) |
 | New dependencies | — | None |
 | Consistency | ❌ Flask=Bearer, MCP=none | ✅ Both use shared extraction + verification |

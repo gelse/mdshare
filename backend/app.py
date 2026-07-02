@@ -11,7 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from backend.config import config
 from backend.storage import get_storage
-from backend.services.share_service import ShareService
+from backend.services.share_service import share_service
 from backend.services.auth import extract_bearer_token, verify_master_password, verify_view_password
 from backend.services.image_handler import save_uploaded_image
 from flasgger import Swagger
@@ -62,7 +62,6 @@ Swagger(app, config=swagger_config, template=swagger_template)
 # ---------------------------------------------------------------------------
 
 storage = get_storage()
-share_service = ShareService(storage)
 
 # ---------------------------------------------------------------------------
 # Request-context auth helpers

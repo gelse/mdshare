@@ -16,8 +16,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from backend.config import config
 from backend.services.auth import extract_bearer_token, verify_master_password
 from backend.services.image_handler import save_base64_image, rewrite_image_urls
-from backend.services.share_service import ShareService
-from backend.storage import get_storage
+from backend.services.share_service import share_service as service
 
 # ---------------------------------------------------------------------------
 # FastMCP application
@@ -33,7 +32,6 @@ mcp = FastMCP(
     json_response=True,
 )
 
-service = ShareService(get_storage())
 
 # ---------------------------------------------------------------------------
 # Helper
@@ -54,27 +52,18 @@ def _share_url(share_id: str) -> str:
 @mcp.tool()
 async def create_share(
     content: str,
-    master_password: str,
     protected: bool = False,
     images: list[str] | None = None,
     ttl_hours: int | None = None,
 ) -> dict[str, Any]:
-    """Create new share from tool arguments."""
-    if not verify_master_password(master_password):
-        return {"error": "Invalid master password"}
-
-    if not content or not content.strip():
-        return {"error": "Content cannot be empty"}
-
-    content_size = len(content.encode("utf-8"))
-    if content_size > config.max_size:
-        return {"error": f"content exceeds max size of {config.max_size} bytes"}
+    """Create new share from tool arguments. Auth via Bearer token."""
 
     doc_id = service.generate_id()
     filenames: set[str] = set()
 
+    decoded: list[tuple[str, str, bytes]] = []
+
     if images:
-        decoded: list[tuple[str, str, bytes]] = []
         for i, img_data in enumerate(images):
             if img_data.startswith("data:"):
                 header, _, b64_data = img_data[5:].partition(",")
@@ -103,20 +92,27 @@ async def create_share(
                 "error": f"total image data exceeds max size of {config.max_size} bytes"
             }
 
-        # Save images and collect filenames
-        for safe_name, img_data, _ in decoded:
-            save_base64_image(img_data, doc_id, safe_name)
+        # Collect filenames for URL rewriting (no saving yet)
+        for safe_name, _, _ in decoded:
             filenames.add(safe_name)
 
         content = rewrite_image_urls(content, doc_id, filenames)
 
-    result = service.create_share(
-        content=content,
-        protected=protected,
-        ttl_hours=ttl_hours,
-        filenames=filenames,
-        doc_id=doc_id,
-    )
+    try:
+        result = service.create_share(
+            content=content,
+            protected=protected,
+            ttl_hours=ttl_hours,
+            filenames=filenames,
+            doc_id=doc_id,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+    # Save images AFTER creating the DB record (matches Flask pattern)
+    if decoded:
+        for safe_name, img_data, _ in decoded:
+            save_base64_image(img_data, doc_id, safe_name)
 
     # Build MCP response — MUST omit password key for public shares (test line 60)
     response: dict[str, Any] = {
@@ -189,10 +185,8 @@ async def health_check() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def list_shares(master_password: str) -> dict[str, Any]:
-    """List all active shares."""
-    if not verify_master_password(master_password):
-        return {"error": "Invalid master password"}
+async def list_shares() -> dict[str, Any]:
+    """List all active shares. Auth via Bearer token."""
 
     shares = service.list_shares()
 
@@ -204,7 +198,7 @@ async def list_shares(master_password: str) -> dict[str, Any]:
                 "url": _share_url(share["id"]),
                 "created_at": share["created_at"],
                 "valid_until": share["valid_until"],
-                "protected": share.get("password") is not None,
+                "protected": share.get("protected", False),
             }
         )
 
