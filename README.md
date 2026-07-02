@@ -165,6 +165,104 @@ No authentication required to view the documentation.
 | `MDSHARE_MAX_SIZE` | No | `16777216` | Max upload size in bytes (16 MB) |
 | `MDSHARE_BASE_URL` | No | *(auto-detected)* | Explicit base URL for share links (e.g. `https://mdshare.example.com`). Overrides auto-detection from request headers. |
 
+## Display Customization
+
+mdshare supports flexible display customization through **global defaults** (optional YAML file) and **per-share overrides** (upload-time JSON). The viewer applies these settings as CSS custom properties on the rendered page.
+
+### Display Options
+
+| Option | Key | Type | Default | Description |
+|--------|-----|------|---------|-------------|
+| Font Family | `font_family` | string | `"system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"` | CSS `font-family` for body text |
+| Font Size | `font_size` | string | `"16px"` | Base text size (any valid CSS size) |
+| Line Height | `line_height` | string | `"1.6"` | Text line height |
+| Max Width | `max_width` | string | `"900px"` | Maximum content width (any valid CSS width) |
+| Theme | `theme` | string | `"auto"` | `"light"`, `"dark"`, or `"auto"` (follows system preference) |
+| Code Font Size | `code_font_size` | string | `"14px"` | Font size for code blocks |
+| Code Line Numbers | `code_line_numbers` | boolean | `false` | Show line numbers in code blocks |
+| Custom CSS | `custom_css` | string | `""` | Raw CSS string injected into viewer page |
+
+### Global Configuration via YAML
+
+Place a `display.yaml` file in your data directory to set system-wide display defaults:
+
+```
+${MDSHARE_DATA_DIR}/display.yaml
+```
+
+The path can be overridden with the `MDSHARE_DISPLAY_CONFIG` environment variable.
+
+The file is **optional** — if missing, hardcoded defaults apply. Invalid or malformed files are silently ignored (falling back to defaults).
+
+```yaml
+# /app/data/display.yaml
+font_family: "Georgia, serif"
+theme: "dark"
+code_line_numbers: true
+```
+
+### Per-Share Override at Upload
+
+Pass a `display_config` JSON form field to override any subset of the 8 display options for a single share:
+
+```bash
+# Dark theme with code line numbers
+curl -X PUT https://mdshare.example.com/api/share \
+  -H "Authorization: Bearer $MDSHARE_MASTER_PASSWORD" \
+  -F 'content=# Hello World' \
+  -F 'display_config={"theme":"dark","code_line_numbers":true}'
+
+# Custom font, size, and max width
+curl -X PUT https://mdshare.example.com/api/share \
+  -H "Authorization: Bearer $MDSHARE_MASTER_PASSWORD" \
+  -F 'content=# Narrow Article' \
+  -F 'display_config={"font_family":"Georgia, serif","font_size":"18px","max_width":"800px"}'
+```
+
+The viewer fetches the merged config (global defaults + per-share overrides) via `GET /v/<id>/config` and applies it automatically.
+
+### CSS Custom Properties Reference
+
+The viewer exposes all display values as CSS custom properties on the `<html>` element. You can target them in your own stylesheets or in the `custom_css` option:
+
+```css
+/* --md-font-family      — body font family   */
+/* --md-font-size         — base text size     */
+/* --md-line-height       — text line height   */
+/* --md-max-width         — content max-width  */
+/* --md-code-font-size    — code block size    */
+```
+
+### Example Recipes
+
+#### Serif Blog Posts
+```bash
+curl -X PUT ... \
+  -F 'display_config={"font_family":"Georgia, serif","font_size":"18px","max_width":"720px"}'
+```
+Georgia font, larger text, narrower reading width — ideal for long-form content.
+
+#### Code-Focused Shares
+```bash
+curl -X PUT ... \
+  -F 'display_config={"theme":"dark","code_line_numbers":true,"code_font_size":"16px"}'
+```
+Dark theme with line numbers and larger code font — great for sharing code snippets.
+
+#### Branded Shares
+```bash
+curl -X PUT ... \
+  -F 'display_config={"custom_css":".header{background:#333;color:#fff;padding:1em;text-align:center}"}'
+```
+Inject a company header/footer via custom CSS — perfect for client-facing shares.
+
+#### Light-Only Share
+```bash
+curl -X PUT ... \
+  -F 'display_config={"theme":"light"}'
+```
+Force light theme regardless of system preference.
+
 ## Reverse Proxy
 
 mdshare is ready to run behind a reverse proxy. It respects
