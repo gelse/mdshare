@@ -65,6 +65,20 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
+    def update_valid_until(self, ids: list[str], valid_until: str | None) -> int:
+        """Batch-update the ``valid_until`` field for one or more shares.
+
+        Args:
+            ids: List of share identifiers to update.
+            valid_until: ISO 8601 datetime string, or ``None`` to clear
+                the expiry (make the share never expire).
+
+        Returns:
+            Number of rows that were actually updated.
+        """
+        ...
+
+    @abstractmethod
     def list_active(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
         """Return a page of metadata for all non-expired shares.
 

@@ -7,6 +7,7 @@ auth helpers, and image handlers.
 import json
 import math
 import os
+from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, abort
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -433,6 +434,80 @@ def list_shares():
         "total_pages": total_pages,
         "total_count": total_count,
     })
+
+
+@app.route("/api/admin/shares/validuntil", methods=["POST"])
+def set_valid_until():
+    """Batch-update valid_until for one or more shares.
+    ---
+    tags:
+      - admin
+    summary: Set valid_until date for shares
+    description: >
+      Sets (or clears) the ``valid_until`` field for an array of share IDs.
+      The date must be ISO 8601 format (e.g. ``"2027-06-01T00:00:00"``).
+      Pass ``null`` to clear the expiry (make shares never expire).
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - ids
+          properties:
+            ids:
+              type: array
+              items:
+                type: string
+              description: Array of share IDs to update.
+            valid_until:
+              type: string
+              nullable: true
+              description: >
+                ISO 8601 datetime string, or ``null`` to clear expiry.
+              example: "2027-06-01T00:00:00"
+    responses:
+      200:
+        description: Batch update result.
+        schema:
+          type: object
+          properties:
+            updated:
+              type: integer
+              description: Number of rows actually updated.
+            not_found:
+              type: integer
+              description: Number of IDs that did not match any share.
+      400:
+        description: Invalid input (missing ids or bad date format).
+      401:
+        description: Missing or invalid master password.
+    """
+    if not _check_master_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json(silent=True)
+    if not data or "ids" not in data:
+        return jsonify({"error": "missing required field: ids"}), 400
+
+    ids = data["ids"]
+    valid_until = data.get("valid_until")  # None means clear expiry
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty array"}), 400
+
+    if not all(isinstance(i, str) and i.strip() for i in ids):
+        return jsonify({"error": "each id must be a non-empty string"}), 400
+
+    try:
+        result = share_service.set_valid_until_date(ids, valid_until)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

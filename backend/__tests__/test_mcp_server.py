@@ -19,6 +19,7 @@ from backend.mcp_server import (
     get_version,
     health_check,
     list_shares,
+    set_valid_until_date,
 )
 
 # conftest.py sets MDSHARE_MASTER_PASSWORD="test-master-password"
@@ -663,3 +664,69 @@ class TestMcpBearerAuth:
         )
         await wrapped(scope, None, lambda _: None)
         assert inner_called
+
+
+class TestSetValidUntilDate:
+    """Tests for :func:`set_valid_until_date` tool function."""
+
+    @pytest.mark.asyncio
+    async def test_set_valid_until_updates_date(self):
+        """Setting valid_until on existing shares returns updated count."""
+        r1 = await create_share(content="share a")
+        r2 = await create_share(content="share b")
+        ids = [r1["url"].rstrip("/").split("/")[-1], r2["url"].rstrip("/").split("/")[-1]]
+
+        result = await set_valid_until_date(
+            ids=ids, valid_until="2027-06-01T00:00:00"
+        )
+        assert result["updated"] == 2
+        assert result["not_found"] == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_valid_until_sets_null(self):
+        """Omitting valid_until (None) clears the expiry."""
+        r = await create_share(content="test")
+        share_id = r["url"].rstrip("/").split("/")[-1]
+
+        # First set a date
+        await set_valid_until_date(ids=[share_id], valid_until="2027-06-01T00:00:00")
+        # Then clear it
+        result = await set_valid_until_date(ids=[share_id])
+        assert result["updated"] == 1
+        assert result["not_found"] == 0
+
+    @pytest.mark.asyncio
+    async def test_non_existent_ids_return_not_found(self):
+        """IDs that don't exist return zero updated."""
+        result = await set_valid_until_date(
+            ids=["nonexistent1", "nonexistent2"]
+        )
+        assert result["updated"] == 0
+        assert result["not_found"] == 2
+
+    @pytest.mark.asyncio
+    async def test_mixed_existing_and_non_existent(self):
+        """Mix of existing and non-existing returns partial counts."""
+        r = await create_share(content="existing")
+        existing_id = r["url"].rstrip("/").split("/")[-1]
+
+        result = await set_valid_until_date(
+            ids=[existing_id, "does-not-exist"],
+            valid_until="2027-06-01T00:00:00",
+        )
+        assert result["updated"] == 1
+        assert result["not_found"] == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_ids_returns_error(self):
+        """Empty ids list returns an error dict."""
+        result = await set_valid_until_date(ids=[])
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_date_returns_error(self):
+        """Invalid ISO 8601 date returns an error dict."""
+        result = await set_valid_until_date(
+            ids=["some-id"], valid_until="not-a-date"
+        )
+        assert "error" in result

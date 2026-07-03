@@ -153,6 +153,18 @@ class SqliteStorage(StorageBackend):
         if os.path.isdir(images_dir):
             shutil.rmtree(images_dir)
 
+    def update_valid_until(self, ids: list[str], valid_until: str | None) -> int:
+        """Batch-update ``valid_until`` for the given share IDs.
+
+        Uses a single parameterized ``UPDATE`` with an ``IN (... )`` clause.
+        Returns the number of rows affected.
+        """
+        placeholders = ", ".join("?" for _ in ids)
+        sql = f"UPDATE shares SET valid_until = ? WHERE id IN ({placeholders})"
+        cursor = self._conn.execute(sql, [valid_until] + ids)
+        self._conn.commit()
+        return cursor.rowcount
+
     def close(self) -> None:
         """Close the database connection for the current thread.
 

@@ -232,6 +232,26 @@ async def list_shares(page_size: int = 50, page: int = 1) -> dict[str, Any]:
     }
 
 
+@mcp.tool()
+async def set_valid_until_date(
+    ids: list[str],
+    valid_until: str | None = None,
+) -> dict[str, Any]:
+    """Batch-update valid_until for one or more shares. Auth via Bearer token.
+
+    Args:
+        ids: Array of share IDs to update.
+        valid_until: ISO 8601 datetime string (e.g.
+            ``"2027-06-01T00:00:00"``), or omit/None to clear the
+            expiry (make the shares never expire).
+    """
+    try:
+        result = service.set_valid_until_date(ids, valid_until)
+        return result
+    except ValueError as e:
+        return {"error": str(e)}
+
+
 # ---------------------------------------------------------------------------
 # ASGI Bearer-auth middleware
 # ---------------------------------------------------------------------------

@@ -292,6 +292,42 @@ class ShareService:
         """Check whether a share ID exists (ignores expiry)."""
         return self.storage.exists(share_id)
 
+    def set_valid_until_date(self, ids: list[str], valid_until: str | None) -> dict:
+        """Batch-update ``valid_until`` for the given share IDs.
+
+        Validates that ``ids`` is non-empty and ``valid_until`` (when
+        not ``None``) is parseable as ISO 8601.
+
+        Args:
+            ids: List of share identifiers to update.  Must not be empty.
+            valid_until: ISO 8601 datetime string (e.g.
+                ``"2027-06-01T00:00:00"``), or ``None`` to clear the
+                expiry (make the share never expire).
+
+        Returns:
+            A dict ``{"updated": N, "not_found": M}`` where *updated*
+            is the number of rows actually changed and *not_found* is
+            the number of IDs that don't match any existing share.
+
+        Raises:
+            ValueError: If ``ids`` is empty or ``valid_until`` (when not
+                ``None``) is not valid ISO 8601.
+        """
+        if not ids:
+            raise ValueError("ids list must not be empty")
+
+        if valid_until is not None:
+            try:
+                datetime.fromisoformat(valid_until)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid date format: '{valid_until}'. "
+                    "Expected ISO 8601 (e.g. 2027-06-01T00:00:00)"
+                ) from None
+
+        updated = self.storage.update_valid_until(ids, valid_until)
+        not_found = len(ids) - updated
+        return {"updated": updated, "not_found": not_found}
 
 # Singleton instance — used by app.py, mcp_server.py, and the test suite.
 # get_storage() returns a shared SqliteStorage singleton, so all consumers
