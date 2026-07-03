@@ -7,6 +7,7 @@ Accessible via the ``/api/mcp`` endpoint.
 from __future__ import annotations
 
 import base64
+import math
 import os
 from typing import Any
 
@@ -193,10 +194,20 @@ async def get_version() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def list_shares() -> dict[str, Any]:
-    """List all active shares. Auth via Bearer token."""
+async def list_shares(page_size: int = 50, page: int = 1) -> dict[str, Any]:
+    """List all active shares with pagination. Auth via Bearer token.
 
-    shares = service.list_shares()
+    Args:
+        page_size: Number of shares per page (1–200, default 50).
+        page: 1-based page number (default 1).
+    """
+
+    if page < 1:
+        return {"error": "page must be >= 1"}
+    if page_size < 1 or page_size > 200:
+        return {"error": "page_size must be between 1 and 200"}
+
+    shares, total_count = service.list_shares(page_size, page)
 
     share_list: list[dict[str, Any]] = []
     for share in shares:
@@ -210,7 +221,15 @@ async def list_shares() -> dict[str, Any]:
             }
         )
 
-    return {"shares": share_list, "count": len(share_list)}
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 1
+
+    return {
+        "shares": share_list,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "total_count": total_count,
+    }
 
 
 # ---------------------------------------------------------------------------

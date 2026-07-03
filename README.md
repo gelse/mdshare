@@ -118,7 +118,13 @@ Health check endpoint. Returns `{"status": "ok"}`.
 
 ### `GET /api/admin/shares`
 
-List all active (non-expired) shares. Requires master password authentication.
+List all active (non-expired) shares with pagination. Requires master password authentication.
+
+**Query Parameters**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | int | `1` | 1-based page number (must be ≥ 1) |
+| `page_size` | int | `50` | Number of shares per page (1–200) |
 
 **Headers**:
 - `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` — master password for authentication
@@ -135,13 +141,17 @@ List all active (non-expired) shares. Requires master password authentication.
       "protected": false
     }
   ],
-  "count": 1
+  "page": 1,
+  "page_size": 50,
+  "total_pages": 1,
+  "total_count": 1
 }
 ```
 
 **Errors**:
 | Status | Meaning |
 |--------|---------|
+| 400 | Invalid query parameter (page < 1, page_size out of range, non-integer value) |
 | 401 | Missing or invalid `Authorization` header |
 
 ### `GET /api/docs/`
@@ -338,7 +348,7 @@ The endpoint uses **Streamable HTTP** transport (stateless, JSON responses). No 
 | `get_share` | Retrieve raw Markdown content. Provide password for protected shares. |
 | `get_share_info` | Check if a share exists and whether it's password-protected, without returning content. |
 | `health_check` | Verify the service is operational (storage backend reachable). |
-| `list_shares` | List all active (non-expired) shares with metadata (id, url, dates, protected status). Requires `master_password`. |
+| `list_shares` | List all active (non-expired) shares with pagination. Supports `page_size` (1–200, default 50) and `page` (default 1) parameters. Returns `page`, `page_size`, `total_pages`, and `total_count` metadata. |
 
 ### Client Configuration
 

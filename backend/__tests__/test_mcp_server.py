@@ -338,10 +338,13 @@ class TestListShares:
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_shares(self):
-        """No shares returns empty list with count 0."""
+        """No shares returns empty list with pagination metadata."""
         result = await list_shares()
         assert result["shares"] == []
-        assert result["count"] == 0
+        assert result["total_count"] == 0
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
 
     @pytest.mark.asyncio
     async def test_lists_public_and_protected_shares(self):
@@ -354,7 +357,9 @@ class TestListShares:
             protected=True,
         )
         result = await list_shares()
-        assert result["count"] >= 2
+        assert result["total_count"] >= 2
+        assert result["page"] == 1
+        assert result["page_size"] == 50
         shares_by_id = {s["id"]: s for s in result["shares"]}
         assert pub["id"] in shares_by_id
         assert prot["id"] in shares_by_id
@@ -373,6 +378,10 @@ class TestListShares:
         assert "url" in share
         assert isinstance(share["url"], str)
         assert len(share["url"]) > 0
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] == 1
+        assert result["total_pages"] == 1
 
     @pytest.mark.asyncio
     async def test_excludes_expired_shares(self):
@@ -396,6 +405,9 @@ class TestListShares:
         share_ids = {s["id"] for s in result["shares"]}
         assert valid["id"] in share_ids
         assert "expired-test-id" not in share_ids
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] >= 1
 
     @pytest.mark.asyncio
     async def test_field_keys_match_expected_schema(self):
@@ -408,8 +420,70 @@ class TestListShares:
         share = result["shares"][0]
         expected_keys = {"id", "url", "created_at", "valid_until", "protected"}
         assert set(share.keys()) == expected_keys
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] == 1
+        assert result["total_pages"] == 1
 
+    @pytest.mark.asyncio
+    async def test_invalid_page_size_below_min(self):
+        """page_size < 1 returns error."""
+        result = await list_shares(page_size=0)
+        assert "error" in result
 
+    @pytest.mark.asyncio
+    async def test_invalid_page_size_above_max(self):
+        """page_size > 200 returns error."""
+        result = await list_shares(page_size=201)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_page_below_one(self):
+        """page < 1 returns error."""
+        result = await list_shares(page=0)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_default_pagination_metadata(self):
+        """Default call returns correct pagination metadata."""
+        result = await list_shares()
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
+        assert result["total_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_page_beyond_end_returns_empty_shares(self):
+        """Page past end returns empty shares list with correct metadata."""
+        await create_share(content="only share")
+        result = await list_shares(page=10)
+        assert result["shares"] == []
+        assert result["total_count"] == 1
+        assert result["page"] == 10
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
+
+    @pytest.mark.asyncio
+    async def test_total_pages_calculation(self):
+        """total_pages is correctly computed from total_count and page_size."""
+        for i in range(3):
+            await create_share(content=f"share {i}")
+        result = await list_shares(page_size=2)
+        assert result["total_count"] == 3
+        assert result["total_pages"] == 2
+        assert len(result["shares"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_custom_page_size_and_page(self):
+        """Custom page_size and page params are reflected in response."""
+        for i in range(5):
+            await create_share(content=f"share {i}")
+        result = await list_shares(page_size=2, page=2)
+        assert result["page"] == 2
+        assert result["page_size"] == 2
+        assert len(result["shares"]) == 2
+        assert result["total_count"] == 5
+        assert result["total_pages"] == 3
 class TestMcpBearerAuth:
     """HTTP-level Bearer auth for the MCP ASGI middleware.
 

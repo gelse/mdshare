@@ -5,6 +5,7 @@ auth helpers, and image handlers.
 """
 
 import json
+import math
 import os
 
 from flask import Flask, request, jsonify, send_from_directory, abort
@@ -359,14 +360,28 @@ def view_display_config(doc_id: str):
 
 @app.route("/api/admin/shares")
 def list_shares():
-    """List all active (non-expired) shares.
+    """List all active (non-expired) shares with pagination.
     ---
     tags: [Admin]
     security:
       - Bearer: []
+    parameters:
+      - in: query
+        name: page_size
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+        description: Number of shares per page
+      - in: query
+        name: page
+        type: integer
+        default: 1
+        minimum: 1
+        description: Page number (1-based)
     responses:
       200:
-        description: List of active shares
+        description: Paginated list of active shares
         schema:
           type: object
           properties:
@@ -380,18 +395,44 @@ def list_shares():
                   created_at: {type: string}
                   valid_until: {type: string}
                   protected: {type: boolean}
-            count: {type: integer}
+            page: {type: integer}
+            page_size: {type: integer}
+            total_pages: {type: integer}
+            total_count: {type: integer}
+      400: {description: Invalid pagination parameters}
       401: {description: Missing or invalid master password}
     """
     if not _check_master_auth():
         return jsonify({"error": "unauthorized"}), 401
 
-    shares = storage.list_active()
+    # Parse and validate pagination parameters
+    try:
+        raw_page_size = request.args.get("page_size", "50")
+        raw_page = request.args.get("page", "1")
+        page_size = int(raw_page_size)
+        page = int(raw_page)
+    except (ValueError, TypeError):
+        return jsonify({"error": "page_size and page must be integers"}), 400
+
+    if page < 1:
+        return jsonify({"error": "page must be >= 1"}), 400
+    if page_size < 1 or page_size > 200:
+        return jsonify({"error": "page_size must be between 1 and 200"}), 400
+
+    shares, total_count = share_service.list_shares(page_size, page)
     base = _base_url()
     for share in shares:
         share["url"] = f"{base}/v/{share['id']}"
 
-    return jsonify({"shares": shares, "count": len(shares)})
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 1
+
+    return jsonify({
+        "shares": shares,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "total_count": total_count,
+    })
 
 
 # ---------------------------------------------------------------------------

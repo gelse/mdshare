@@ -257,7 +257,7 @@ class ShareService:
         directory path.
         """
         try:
-            self.storage.list_active()
+            self.storage.list_active()  # type: ignore[return-value]
             storage_status = "ok"
         except Exception:  # noqa: BLE001
             storage_status = "degraded"
@@ -268,9 +268,17 @@ class ShareService:
             "data_dir": config.data_dir,
         }
 
-    def list_shares(self) -> list[dict]:
-        """Return all active (non-expired) shares."""
-        return self.storage.list_active()
+    def list_shares(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
+        """Return a page of active (non-expired) shares.
+
+        Args:
+            page_size: Number of shares per page (1–200, default 50).
+            page: 1-based page number (default 1).
+
+        Returns:
+            A tuple of (list of share dicts, total count of matching rows).
+        """
+        return self.storage.list_active(page_size, page)
 
     def delete_share(self, share_id: str) -> bool:
         """Remove a share from storage.  Returns ``True`` on success."""

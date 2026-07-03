@@ -65,14 +65,19 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
-    def list_active(self) -> list[dict]:
-        """Return metadata for all non-expired shares.
+    def list_active(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
+        """Return a page of metadata for all non-expired shares.
 
         Expired shares (valid_until not null and in the past) are
         excluded. Shares with valid_until = NULL never expire.
 
+        Args:
+            page_size: Number of shares per page (1–200, default 50).
+            page: 1-based page number (default 1).
+
         Returns:
-            List of dicts, each with keys ``id``, ``created_at``,
+            A tuple of (list of share dicts, total count of matching rows).
+            Each share dict has keys ``id``, ``created_at``,
             ``valid_until``, and ``protected`` (bool — True if a
             password hash is present).
         """

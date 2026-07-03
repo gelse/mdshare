@@ -169,17 +169,30 @@ class SqliteStorage(StorageBackend):
         ).fetchone()
         return row is not None
 
-    def list_active(self) -> list[dict]:
-        """Return metadata for all non-expired shares.
+    def list_active(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
+        """Return a page of metadata for all non-expired shares.
 
         Expired shares (valid_until IS NOT NULL and <= now) are
         excluded. Shares with valid_until = NULL never expire.
+
+        Returns:
+            A tuple of (list of share dicts, total count of matching rows).
         """
+        # Total count first
+        (total_count,) = self._conn.execute(
+            "SELECT COUNT(*) FROM shares "
+            "WHERE valid_until IS NULL OR valid_until > datetime('now')"
+        ).fetchone()
+
+        # Paginated data query
+        offset = (page - 1) * page_size
         rows = self._conn.execute(
             "SELECT id, created_at, valid_until, password "
             "FROM shares "
             "WHERE valid_until IS NULL OR valid_until > datetime('now') "
-            "ORDER BY created_at DESC"
+            "ORDER BY created_at DESC "
+            "LIMIT ? OFFSET ?",
+            (page_size, offset),
         ).fetchall()
 
         result: list[dict] = []
@@ -190,4 +203,4 @@ class SqliteStorage(StorageBackend):
                 "valid_until": valid_until,
                 "protected": password_hash is not None,
             })
-        return result
+        return result, total_count
