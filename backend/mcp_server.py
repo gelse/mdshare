@@ -58,7 +58,26 @@ async def create_share(
     ttl_hours: int | None = None,
     display_config: dict | None = None,
 ) -> dict[str, Any]:
-    """Create new share from tool arguments. Auth via Bearer token."""
+    """Create a new Markdown share.
+
+    Args:
+        content: Markdown content to share.
+        protected: If True, generates a random view password. Defaults to False.
+        images: Optional list of base64-encoded image strings (with optional
+            ``data:...;filename=...`` prefix) to attach to the share.
+        ttl_hours: Time-to-live in hours. ``0`` means no expiry. Defaults to
+            the server-side default (168 hours = 7 days).
+        display_config: Optional dict with per-share display overrides. Any
+            subset of the 8 available keys can be provided; omitted keys fall
+            through to the server-side global defaults. Available keys:
+            ``theme`` (``"light"``, ``"dark"``, ``"auto"``),
+            ``font_family``, ``font_size``, ``line_height``, ``max_width``,
+            ``code_font_size``, ``code_line_numbers`` (bool), ``custom_css``.
+
+    Returns:
+        dict with keys ``"url"``, optionally ``"password"`` (if protected),
+        and ``"valid_until"`` (ISO 8601, omitted when ttl_hours=0).
+    """
 
     doc_id = service.generate_id()
     filenames: set[str] = set()

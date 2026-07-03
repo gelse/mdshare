@@ -103,6 +103,7 @@ Upload Markdown content with optional images and password protection.
 | `content` | text | Yes | Markdown content |
 | `protected` | text | No | `"yes"` or `"no"` (default: `"no"`) |
 | `ttl` | int | No | TTL in hours; `0` means no expiry (default: `168` = 7 days) |
+| `display_config` | JSON | No | Per-share display overrides (theme, fonts, etc.). See [Display Configuration](#display-configuration) for the full key reference. |
 | *any file* | file | No | Images referenced in Markdown |
 
 **Response** (201):
@@ -258,7 +259,7 @@ The endpoint uses **Streamable HTTP** transport (stateless, JSON responses). No 
 
 | Tool | Description |
 |------|-------------|
-| `create_share` | Upload Markdown content as a new share. Supports password protection, base64-encoded images, and optional `ttl_hours` (default: 168 = 7 days; `0` = no expiry). |
+| `create_share` | Upload Markdown content as a new share. Supports password protection, base64-encoded images, optional `ttl_hours` (default: 168 = 7 days; `0` = no expiry), and optional `display_config` dict for per-share display overrides (see [Display Configuration](#display-configuration)). |
 | `get_share` | Retrieve raw Markdown content. Provide password for protected shares. |
 | `get_share_info` | Check if a share exists and whether it's password-protected, without returning content. |
 | `health_check` | Verify the service is operational (storage backend reachable). |
@@ -479,6 +480,19 @@ curl -X PUT http://localhost:8080/api/share \
 ```
 
 Only the keys you provide are overridden; all other options fall through to the global defaults (or hardcoded defaults).
+
+##### Available Keys
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `theme` | string | `"auto"` | Color theme. Valid values: `"light"`, `"dark"`, `"auto"` (follows system preference). |
+| `font_family` | string | `"system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"` | CSS `font-family` for body text. |
+| `font_size` | string | `"16px"` | CSS `font-size` for body text. |
+| `line_height` | string | `"1.6"` | CSS `line-height` for body text. |
+| `max_width` | string | `"900px"` | CSS `max-width` for the content container. |
+| `code_font_size` | string | `"14px"` | CSS `font-size` for code blocks. |
+| `code_line_numbers` | boolean | `false` | Show line numbers in code blocks. |
+| `custom_css` | string | `""` | Raw CSS injected into the viewer page for custom branding. |
 
 #### Example Use-Cases
 
