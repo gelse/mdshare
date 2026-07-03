@@ -1,4 +1,4 @@
-.PHONY: build test test-watch test-coverage test-integration ci-unit-test ci-test-direct
+.PHONY: build test test-watch test-coverage test-integration ci-unit-test
 
 VENV = venv/bin/
 
@@ -36,12 +36,6 @@ ci-unit-test:
 	mkdir -p test-results
 	docker compose --profile test up --build --abort-on-container-exit --exit-code-from test
 	docker compose --profile test down
-
-# GitHub CI — direct pytest (no Docker, no venv).
-ci-test-direct:
-	pip install --no-cache-dir -r backend/requirements.txt -r requirements-dev.txt
-	mkdir -p test-results
-	python -m pytest backend --junitxml=test-results/junit.xml
 
 # SSL is now handled by an external reverse proxy.
 # The frontend-ssl service has been disabled in docker-compose.yml.

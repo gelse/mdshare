@@ -9,6 +9,7 @@ ENV MDSHARE_VERSION=$MDSHARE_VERSION
 ENV PYTHONUNBUFFERED=1
 
 COPY backend/ /app/backend/
+COPY pytest.ini /app/
 COPY requirements-dev.txt /app/
 
 RUN pip install --no-cache-dir -r /app/requirements-dev.txt
