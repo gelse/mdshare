@@ -7,6 +7,7 @@ Accessible via the ``/api/mcp`` endpoint.
 from __future__ import annotations
 
 import base64
+import math
 import os
 from typing import Any
 
@@ -55,8 +56,28 @@ async def create_share(
     protected: bool = False,
     images: list[str] | None = None,
     ttl_hours: int | None = None,
+    display_config: dict | None = None,
 ) -> dict[str, Any]:
-    """Create new share from tool arguments. Auth via Bearer token."""
+    """Create a new Markdown share.
+
+    Args:
+        content: Markdown content to share.
+        protected: If True, generates a random view password. Defaults to False.
+        images: Optional list of base64-encoded image strings (with optional
+            ``data:...;filename=...`` prefix) to attach to the share.
+        ttl_hours: Time-to-live in hours. ``0`` means no expiry. Defaults to
+            the server-side default (168 hours = 7 days).
+        display_config: Optional dict with per-share display overrides. Any
+            subset of the 8 available keys can be provided; omitted keys fall
+            through to the server-side global defaults. Available keys:
+            ``theme`` (``"light"``, ``"dark"``, ``"auto"``),
+            ``font_family``, ``font_size``, ``line_height``, ``max_width``,
+            ``code_font_size``, ``code_line_numbers`` (bool), ``custom_css``.
+
+    Returns:
+        dict with keys ``"url"``, optionally ``"password"`` (if protected),
+        and ``"valid_until"`` (ISO 8601, omitted when ttl_hours=0).
+    """
 
     doc_id = service.generate_id()
     filenames: set[str] = set()
@@ -105,6 +126,7 @@ async def create_share(
             ttl_hours=ttl_hours,
             filenames=filenames,
             doc_id=doc_id,
+            display_config=display_config,
         )
     except ValueError as e:
         return {"error": str(e)}
@@ -184,31 +206,69 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-    @mcp.tool()
-    async def get_version() -> dict[str, Any]:
-        """Return deployed mdshare version (git hash or release tag)."""
-        return {"version": config.version}
+@mcp.tool()
+async def get_version() -> dict[str, Any]:
+    """Return deployed mdshare version (git hash or release tag)."""
+    return {"version": config.version}
 
 
-    @mcp.tool()
-    async def list_shares() -> dict[str, Any]:
-        """List all active shares. Auth via Bearer token."""
+@mcp.tool()
+async def list_shares(page_size: int = 50, page: int = 1) -> dict[str, Any]:
+    """List all active shares with pagination. Auth via Bearer token.
 
-        shares = service.list_shares()
+    Args:
+        page_size: Number of shares per page (1–200, default 50).
+        page: 1-based page number (default 1).
+    """
 
-        share_list: list[dict[str, Any]] = []
-        for share in shares:
-            share_list.append(
-                {
-                    "id": share["id"],
-                    "url": _share_url(share["id"]),
-                    "created_at": share["created_at"],
-                    "valid_until": share["valid_until"],
-                    "protected": share.get("protected", False),
-                }
-            )
+    if page < 1:
+        return {"error": "page must be >= 1"}
+    if page_size < 1 or page_size > 200:
+        return {"error": "page_size must be between 1 and 200"}
 
-        return {"shares": share_list, "count": len(share_list)}
+    shares, total_count = service.list_shares(page_size, page)
+
+    share_list: list[dict[str, Any]] = []
+    for share in shares:
+        share_list.append(
+            {
+                "id": share["id"],
+                "url": _share_url(share["id"]),
+                "created_at": share["created_at"],
+                "valid_until": share["valid_until"],
+                "protected": share.get("protected", False),
+            }
+        )
+
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 1
+
+    return {
+        "shares": share_list,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "total_count": total_count,
+    }
+
+
+@mcp.tool()
+async def set_valid_until_date(
+    ids: list[str],
+    valid_until: str | None = None,
+) -> dict[str, Any]:
+    """Batch-update valid_until for one or more shares. Auth via Bearer token.
+
+    Args:
+        ids: Array of share IDs to update.
+        valid_until: ISO 8601 datetime string (e.g.
+            ``"2027-06-01T00:00:00"``), or omit/None to clear the
+            expiry (make the shares never expire).
+    """
+    try:
+        result = service.set_valid_until_date(ids, valid_until)
+        return result
+    except ValueError as e:
+        return {"error": str(e)}
 
 
 # ---------------------------------------------------------------------------

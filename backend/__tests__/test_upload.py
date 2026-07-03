@@ -243,16 +243,13 @@ class TestUploadTTL:
 
 
 class TestAdminListShares:
-    """Tests for GET /api/admin/shares — admin share listing."""
+    """Tests for GET /api/admin/shares — admin share listing with pagination."""
 
     URL = "/api/admin/shares"
 
-    def test_returns_empty_list_when_no_shares(self, client):
-        resp = client.get(self.URL, headers=AUTH)
-        assert resp.status_code == 200
-        assert resp.is_json
-        data = resp.get_json()
-        assert data == {"shares": [], "count": 0}
+    # ------------------------------------------------------------------
+    # Auth tests (unchanged)
+    # ------------------------------------------------------------------
 
     def test_returns_401_without_auth(self, client):
         resp = client.get(self.URL)
@@ -265,6 +262,25 @@ class TestAdminListShares:
             headers={"Authorization": "Bearer wrong-password"},
         )
         assert resp.status_code == 401
+
+    # ------------------------------------------------------------------
+    # Basic functionality with new pagination response shape
+    # ------------------------------------------------------------------
+
+    def test_returns_empty_list_when_no_shares(self, client):
+        resp = client.get(self.URL, headers=AUTH)
+        assert resp.status_code == 200
+        assert resp.is_json
+        data = resp.get_json()
+        assert data["shares"] == []
+        assert data["page"] == 1
+        assert data["page_size"] == 50
+        assert data["total_pages"] == 1
+        assert data["total_count"] == 0
+
+    def test_response_is_json(self, client):
+        resp = client.get(self.URL, headers=AUTH)
+        assert resp.is_json
 
     def test_lists_public_and_protected_shares(self, client):
         # Create one public and one protected share
@@ -282,7 +298,10 @@ class TestAdminListShares:
         resp = client.get(self.URL, headers=AUTH)
         assert resp.status_code == 200
         data = resp.get_json()
-        assert data["count"] == 2
+        assert data["total_count"] == 2
+        assert data["page"] == 1
+        assert data["page_size"] == 50
+        assert data["total_pages"] == 1
 
         # Find the protected share and verify its flag
         protected = [s for s in data["shares"] if s["protected"]]
@@ -339,9 +358,234 @@ class TestAdminListShares:
 
         resp = client.get(self.URL, headers=AUTH)
         data = resp.get_json()
-        assert data["count"] == 1  # only the non-expired share
+        assert data["total_count"] == 1  # only the non-expired share
+        assert data["total_pages"] == 1
         assert data["shares"][0]["valid_until"] is None
 
-    def test_response_is_json(self, client):
+    # ------------------------------------------------------------------
+    # Pagination parameter validation
+    # ------------------------------------------------------------------
+
+    def test_invalid_page_size_below_min_returns_400(self, client):
+        resp = client.get(self.URL, query_string={"page_size": "0"}, headers=AUTH)
+        assert resp.status_code == 400
+        assert "page_size" in resp.get_json()["error"]
+
+    def test_invalid_page_size_above_max_returns_400(self, client):
+        resp = client.get(self.URL, query_string={"page_size": "201"}, headers=AUTH)
+        assert resp.status_code == 400
+        assert "page_size" in resp.get_json()["error"]
+
+    def test_invalid_page_below_one_returns_400(self, client):
+        resp = client.get(self.URL, query_string={"page": "0"}, headers=AUTH)
+        assert resp.status_code == 400
+        assert "page" in resp.get_json()["error"]
+
+    def test_non_integer_page_size_returns_400(self, client):
+        resp = client.get(self.URL, query_string={"page_size": "abc"}, headers=AUTH)
+        assert resp.status_code == 400
+        assert "integer" in resp.get_json()["error"]
+
+    def test_non_integer_page_returns_400(self, client):
+        resp = client.get(self.URL, query_string={"page": "abc"}, headers=AUTH)
+        assert resp.status_code == 400
+        assert "integer" in resp.get_json()["error"]
+
+    # ------------------------------------------------------------------
+    # Pagination behaviour
+    # ------------------------------------------------------------------
+
+    def test_default_pagination_metadata(self, client):
+        """Default page_size=50, page=1 when no query params provided."""
         resp = client.get(self.URL, headers=AUTH)
-        assert resp.is_json
+        data = resp.get_json()
+        assert data["page"] == 1
+        assert data["page_size"] == 50
+
+    def test_custom_page_size_reflected_in_response(self, client):
+        resp = client.get(self.URL, query_string={"page_size": "10"}, headers=AUTH)
+        data = resp.get_json()
+        assert data["page_size"] == 10
+
+    def test_page_parameter_reflected_in_response(self, client):
+        resp = client.get(self.URL, query_string={"page": "3"}, headers=AUTH)
+        data = resp.get_json()
+        assert data["page"] == 3
+
+    def test_page_beyond_end_returns_empty_shares(self, client):
+        """Page past the last page returns empty share list with correct metadata."""
+        # Create 3 shares
+        for i in range(3):
+            client.put(
+                "/api/share",
+                data={"content": f"share {i}"},
+                headers=AUTH,
+            )
+        resp = client.get(
+            self.URL, query_string={"page": "10", "page_size": "2"}, headers=AUTH
+        )
+        data = resp.get_json()
+        assert data["shares"] == []
+        assert data["page"] == 10
+        assert data["page_size"] == 2
+        assert data["total_pages"] == 2  # 3 shares at page_size=2 = ceil(3/2) = 2
+        assert data["total_count"] == 3
+
+    def test_total_pages_calculation(self, client):
+        """total_pages = ceil(total_count / page_size)."""
+        # Create 5 shares
+        for i in range(5):
+            client.put(
+                "/api/share",
+                data={"content": f"share {i}"},
+                headers=AUTH,
+            )
+        resp = client.get(
+            self.URL, query_string={"page_size": "3"}, headers=AUTH
+        )
+        data = resp.get_json()
+        assert data["total_count"] == 5
+        assert data["page_size"] == 3
+        assert data["total_pages"] == 2  # ceil(5/3)
+
+    def test_second_page_returns_remaining_shares(self, client):
+        """With page_size=2 and 3 shares, page 2 has 1 share."""
+        for i in range(3):
+            client.put(
+                "/api/share",
+                data={"content": f"share {i}"},
+                headers=AUTH,
+            )
+        resp = client.get(
+            self.URL, query_string={"page": "2", "page_size": "2"}, headers=AUTH
+        )
+        data = resp.get_json()
+        assert len(data["shares"]) == 1
+        assert data["page"] == 2
+        assert data["total_count"] == 3
+        assert data["total_pages"] == 2
+
+
+VALID_UNTIL_URL = "/api/admin/shares/validuntil"
+
+
+class TestAdminSetValidUntil:
+    """Tests for POST /api/admin/shares/validuntil — batch set valid_until."""
+
+    def test_returns_401_without_auth(self, client):
+        """Missing auth header returns 401."""
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": ["abc"], "valid_until": "2027-06-01T00:00:00"},
+        )
+        assert resp.status_code == 401
+
+    def test_missing_ids_field_returns_400(self, client):
+        """Request body without 'ids' returns 400."""
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"valid_until": "2027-06-01T00:00:00"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "missing required field: ids"
+
+    def test_empty_ids_array_returns_400(self, client):
+        """Empty ids array returns 400."""
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": [], "valid_until": "2027-06-01T00:00:00"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "ids must be a non-empty array"
+
+    def test_non_string_id_returns_400(self, client):
+        """Numeric element in ids array returns 400."""
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": [42], "valid_until": "2027-06-01T00:00:00"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 400
+        assert "non-empty string" in resp.get_json()["error"]
+
+    def test_invalid_date_format_returns_400(self, client):
+        """Bad ISO 8601 date returns 400."""
+        # Create at least one share first
+        client.put("/api/share", data={"content": "test"}, headers=AUTH)
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": ["abc123def456"], "valid_until": "not-a-date"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 400
+        assert "Invalid date format" in resp.get_json()["error"]
+
+    def test_set_valid_until_updates_date(self, client):
+        """Setting valid_until on existing shares returns updated count."""
+        # Create two shares
+        r1 = client.put("/api/share", data={"content": "a"}, headers=AUTH)
+        r2 = client.put("/api/share", data={"content": "b"}, headers=AUTH)
+        id1 = r1.get_json()["url"].rstrip("/").split("/")[-1]
+        id2 = r2.get_json()["url"].rstrip("/").split("/")[-1]
+
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": [id1, id2], "valid_until": "2027-06-01T00:00:00"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["updated"] == 2
+        assert data["not_found"] == 0
+
+    def test_clear_valid_until_sets_null(self, client):
+        """Omitting valid_until (null) clears the expiry."""
+        r = client.put("/api/share", data={"content": "x"}, headers=AUTH)
+        share_id = r.get_json()["url"].rstrip("/").split("/")[-1]
+
+        # First set a date
+        client.post(
+            VALID_UNTIL_URL,
+            json={"ids": [share_id], "valid_until": "2027-06-01T00:00:00"},
+            headers=AUTH,
+        )
+        # Then clear it
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": [share_id], "valid_until": None},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        assert resp.get_json()["updated"] == 1
+
+    def test_non_existent_ids_return_not_found(self, client):
+        """IDs that don't exist are counted in not_found."""
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={"ids": ["nonexistent1", "nonexistent2"], "valid_until": None},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["updated"] == 0
+        assert data["not_found"] == 2
+
+    def test_mixed_existing_and_non_existent(self, client):
+        """Mix of existing and non-existing IDs returns partial results."""
+        r = client.put("/api/share", data={"content": "existing"}, headers=AUTH)
+        existing_id = r.get_json()["url"].rstrip("/").split("/")[-1]
+
+        resp = client.post(
+            VALID_UNTIL_URL,
+            json={
+                "ids": [existing_id, "does-not-exist"],
+                "valid_until": "2027-06-01T00:00:00",
+            },
+            headers=AUTH,
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["updated"] == 1
+        assert data["not_found"] == 1

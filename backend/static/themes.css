@@ -98,6 +98,35 @@
     }
 }
 
+/* --- Forced theme via data-color-mode (JS, e.g. display config) --- */
+[data-color-mode="light"] {
+    --bg: #ffffff;
+    --text: #24292f;
+    --border: #d0d7de;
+    --code-bg: #f6f8fa;
+    --input-bg: #ffffff;
+    --shadow: rgba(0, 0, 0, 0.1);
+    --accent: #0969da;
+    --accent-fg: #0969da;
+    --error: #cf222e;
+    --muted: #656d76;
+    --card-bg: #f6f8fa;
+}
+
+[data-color-mode="dark"] {
+    --bg: #0d1117;
+    --text: #c9d1d9;
+    --border: #30363d;
+    --code-bg: #161b22;
+    --input-bg: #0d1117;
+    --shadow: rgba(255, 255, 255, 0.05);
+    --accent: #1f6feb;
+    --accent-fg: #58a6ff;
+    --error: #f85149;
+    --muted: #8b949e;
+    --card-bg: #161b22;
+}
+
 /* --- KaTeX dark mode overrides --- */
 [data-color-mode="dark"] .katex {
     color: #c9d1d9;

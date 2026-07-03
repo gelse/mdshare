@@ -22,6 +22,9 @@ class StorageBackend(ABC):
                  - 'valid_until' (str | None): ISO 8601 datetime after which
                    the share should be treated as expired, or None for
                    shares that never expire (grandfathered rows).
+                 - 'display_config' (dict | None): Per-share display
+                   overrides (e.g. ``{"lineNumbers": true}``), or None to
+                   use global defaults.
         """
         ...
 
@@ -62,14 +65,33 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
-    def list_active(self) -> list[dict]:
-        """Return metadata for all non-expired shares.
+    def update_valid_until(self, ids: list[str], valid_until: str | None) -> int:
+        """Batch-update the ``valid_until`` field for one or more shares.
+
+        Args:
+            ids: List of share identifiers to update.
+            valid_until: ISO 8601 datetime string, or ``None`` to clear
+                the expiry (make the share never expire).
+
+        Returns:
+            Number of rows that were actually updated.
+        """
+        ...
+
+    @abstractmethod
+    def list_active(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
+        """Return a page of metadata for all non-expired shares.
 
         Expired shares (valid_until not null and in the past) are
         excluded. Shares with valid_until = NULL never expire.
 
+        Args:
+            page_size: Number of shares per page (1–200, default 50).
+            page: 1-based page number (default 1).
+
         Returns:
-            List of dicts, each with keys ``id``, ``created_at``,
+            A tuple of (list of share dicts, total count of matching rows).
+            Each share dict has keys ``id``, ``created_at``,
             ``valid_until``, and ``protected`` (bool — True if a
             password hash is present).
         """

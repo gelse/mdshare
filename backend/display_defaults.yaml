@@ -1,0 +1,12 @@
+# mdshare display configuration defaults
+# Uncomment and edit any values you want to override.
+# This file is optional — if missing, the hardcoded defaults below apply.
+#
+#font_family: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+#font_size: "16px"
+#line_height: "1.6"
+#max_width: "900px"
+#theme: "auto"
+#code_font_size: "14px"
+#code_line_numbers: false
+#custom_css: ""

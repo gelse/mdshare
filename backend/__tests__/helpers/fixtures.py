@@ -1,5 +1,7 @@
 """Test helper factories for creating shares in test scenarios."""
 
+import json
+
 import bcrypt
 from pathlib import Path
 
@@ -55,6 +57,7 @@ def make_share_form(
     content: str = "# Hello",
     protected: str = "no",
     content_type: str = "multipart/form-data",
+    display_config: dict | None = None,
 ) -> tuple[dict, str]:
     """Return (data, content_type) suitable for a PUT /api/share request.
 
@@ -66,9 +69,14 @@ def make_share_form(
         ``"yes"`` or ``"no"``.
     content_type:
         The HTTP Content-Type to use for the request body.
+    display_config:
+        Optional per-share display configuration overrides. When provided,
+        it is JSON-encoded and included as the ``display_config`` form field.
     """
     data = {
         "content": content,
         "protected": protected,
     }
+    if display_config is not None:
+        data["display_config"] = json.dumps(display_config)
     return data, content_type

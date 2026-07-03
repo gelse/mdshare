@@ -19,6 +19,7 @@ from backend.mcp_server import (
     get_version,
     health_check,
     list_shares,
+    set_valid_until_date,
 )
 
 # conftest.py sets MDSHARE_MASTER_PASSWORD="test-master-password"
@@ -158,6 +159,31 @@ class TestCreateShare:
         # When valid_until is None, the key should not be present
         # or explicitly set to None (depends on response format)
         assert result.get("valid_until") is None
+
+    @pytest.mark.asyncio
+    async def test_display_config_passed_through(self):
+        """display_config overrides are passed through without error."""
+        result = await create_share(
+            content="# Test",
+            protected=False,
+            display_config={"theme": "dark", "code_line_numbers": True},
+        )
+        assert "id" in result
+        assert "url" in result
+        assert "error" not in result
+        # Verify share was stored by checking its info
+        info = await get_share_info(share_id=result["id"])
+        assert info["exists"] is True
+
+    @pytest.mark.asyncio
+    async def test_invalid_display_config_returns_error(self):
+        """Invalid display_config values return error, not success."""
+        result = await create_share(
+            content="# Test",
+            protected=False,
+            display_config={"theme": "blue"},
+        )
+        assert "error" in result
 
 
 class TestGetShare:
@@ -313,10 +339,13 @@ class TestListShares:
 
     @pytest.mark.asyncio
     async def test_returns_empty_list_when_no_shares(self):
-        """No shares returns empty list with count 0."""
+        """No shares returns empty list with pagination metadata."""
         result = await list_shares()
         assert result["shares"] == []
-        assert result["count"] == 0
+        assert result["total_count"] == 0
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
 
     @pytest.mark.asyncio
     async def test_lists_public_and_protected_shares(self):
@@ -329,7 +358,9 @@ class TestListShares:
             protected=True,
         )
         result = await list_shares()
-        assert result["count"] >= 2
+        assert result["total_count"] >= 2
+        assert result["page"] == 1
+        assert result["page_size"] == 50
         shares_by_id = {s["id"]: s for s in result["shares"]}
         assert pub["id"] in shares_by_id
         assert prot["id"] in shares_by_id
@@ -348,6 +379,10 @@ class TestListShares:
         assert "url" in share
         assert isinstance(share["url"], str)
         assert len(share["url"]) > 0
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] == 1
+        assert result["total_pages"] == 1
 
     @pytest.mark.asyncio
     async def test_excludes_expired_shares(self):
@@ -371,6 +406,9 @@ class TestListShares:
         share_ids = {s["id"] for s in result["shares"]}
         assert valid["id"] in share_ids
         assert "expired-test-id" not in share_ids
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] >= 1
 
     @pytest.mark.asyncio
     async def test_field_keys_match_expected_schema(self):
@@ -383,8 +421,70 @@ class TestListShares:
         share = result["shares"][0]
         expected_keys = {"id", "url", "created_at", "valid_until", "protected"}
         assert set(share.keys()) == expected_keys
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_count"] == 1
+        assert result["total_pages"] == 1
 
+    @pytest.mark.asyncio
+    async def test_invalid_page_size_below_min(self):
+        """page_size < 1 returns error."""
+        result = await list_shares(page_size=0)
+        assert "error" in result
 
+    @pytest.mark.asyncio
+    async def test_invalid_page_size_above_max(self):
+        """page_size > 200 returns error."""
+        result = await list_shares(page_size=201)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_page_below_one(self):
+        """page < 1 returns error."""
+        result = await list_shares(page=0)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_default_pagination_metadata(self):
+        """Default call returns correct pagination metadata."""
+        result = await list_shares()
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
+        assert result["total_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_page_beyond_end_returns_empty_shares(self):
+        """Page past end returns empty shares list with correct metadata."""
+        await create_share(content="only share")
+        result = await list_shares(page=10)
+        assert result["shares"] == []
+        assert result["total_count"] == 1
+        assert result["page"] == 10
+        assert result["page_size"] == 50
+        assert result["total_pages"] == 1
+
+    @pytest.mark.asyncio
+    async def test_total_pages_calculation(self):
+        """total_pages is correctly computed from total_count and page_size."""
+        for i in range(3):
+            await create_share(content=f"share {i}")
+        result = await list_shares(page_size=2)
+        assert result["total_count"] == 3
+        assert result["total_pages"] == 2
+        assert len(result["shares"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_custom_page_size_and_page(self):
+        """Custom page_size and page params are reflected in response."""
+        for i in range(5):
+            await create_share(content=f"share {i}")
+        result = await list_shares(page_size=2, page=2)
+        assert result["page"] == 2
+        assert result["page_size"] == 2
+        assert len(result["shares"]) == 2
+        assert result["total_count"] == 5
+        assert result["total_pages"] == 3
 class TestMcpBearerAuth:
     """HTTP-level Bearer auth for the MCP ASGI middleware.
 
@@ -564,3 +664,69 @@ class TestMcpBearerAuth:
         )
         await wrapped(scope, None, lambda _: None)
         assert inner_called
+
+
+class TestSetValidUntilDate:
+    """Tests for :func:`set_valid_until_date` tool function."""
+
+    @pytest.mark.asyncio
+    async def test_set_valid_until_updates_date(self):
+        """Setting valid_until on existing shares returns updated count."""
+        r1 = await create_share(content="share a")
+        r2 = await create_share(content="share b")
+        ids = [r1["url"].rstrip("/").split("/")[-1], r2["url"].rstrip("/").split("/")[-1]]
+
+        result = await set_valid_until_date(
+            ids=ids, valid_until="2027-06-01T00:00:00"
+        )
+        assert result["updated"] == 2
+        assert result["not_found"] == 0
+
+    @pytest.mark.asyncio
+    async def test_clear_valid_until_sets_null(self):
+        """Omitting valid_until (None) clears the expiry."""
+        r = await create_share(content="test")
+        share_id = r["url"].rstrip("/").split("/")[-1]
+
+        # First set a date
+        await set_valid_until_date(ids=[share_id], valid_until="2027-06-01T00:00:00")
+        # Then clear it
+        result = await set_valid_until_date(ids=[share_id])
+        assert result["updated"] == 1
+        assert result["not_found"] == 0
+
+    @pytest.mark.asyncio
+    async def test_non_existent_ids_return_not_found(self):
+        """IDs that don't exist return zero updated."""
+        result = await set_valid_until_date(
+            ids=["nonexistent1", "nonexistent2"]
+        )
+        assert result["updated"] == 0
+        assert result["not_found"] == 2
+
+    @pytest.mark.asyncio
+    async def test_mixed_existing_and_non_existent(self):
+        """Mix of existing and non-existing returns partial counts."""
+        r = await create_share(content="existing")
+        existing_id = r["url"].rstrip("/").split("/")[-1]
+
+        result = await set_valid_until_date(
+            ids=[existing_id, "does-not-exist"],
+            valid_until="2027-06-01T00:00:00",
+        )
+        assert result["updated"] == 1
+        assert result["not_found"] == 1
+
+    @pytest.mark.asyncio
+    async def test_empty_ids_returns_error(self):
+        """Empty ids list returns an error dict."""
+        result = await set_valid_until_date(ids=[])
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_date_returns_error(self):
+        """Invalid ISO 8601 date returns an error dict."""
+        result = await set_valid_until_date(
+            ids=["some-id"], valid_until="not-a-date"
+        )
+        assert "error" in result

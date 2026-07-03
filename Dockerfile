@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # copy application (preserving the backend package structure)
 COPY backend/ /app/backend/
+COPY backend/display_defaults.yaml /app/backend/display_defaults.yaml
 
 EXPOSE 5000
 

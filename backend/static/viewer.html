@@ -11,7 +11,18 @@
         href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css"
         data-color-mode-src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
   <style>
-    body { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+    body {
+      max-width: var(--md-max-width, 900px);
+      margin: 0 auto;
+      padding: 2rem 1rem;
+      font-family: var(--md-font-family, -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif);
+      font-size: var(--md-font-size, 16px);
+      line-height: var(--md-line-height, 1.6);
+    }
+    pre code {
+      font-size: var(--md-code-font-size, 0.9em);
+      border-radius: 6px;
+    }
     #pw-overlay { position: fixed; inset: 0; background: var(--bg, #fff);
                   display: flex; align-items: center; justify-content: center; z-index: 100; }
     #pw-overlay.hidden { display: none; }
@@ -21,7 +32,6 @@
     #pw-card button { padding: 0.5rem 1.5rem; }
     #error-msg { color: #cf222e; margin-top: 0.5rem; font-size: 0.9rem; }
     img { max-width: 100%; }
-    pre code { border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -73,6 +83,57 @@
       return res;
     }
 
+    async function applyDisplayConfig() {
+      try {
+        const res = await fetch(`/v/${docId}/config`);
+        if (!res.ok) return;
+        const config = await res.json();
+        const root = document.documentElement;
+
+        // Apply CSS custom properties
+        if (config.font_family) root.style.setProperty('--md-font-family', config.font_family);
+        if (config.font_size) root.style.setProperty('--md-font-size', config.font_size);
+        if (config.line_height) root.style.setProperty('--md-line-height', config.line_height);
+        if (config.max_width) root.style.setProperty('--md-max-width', config.max_width);
+        if (config.code_font_size) root.style.setProperty('--md-code-font-size', config.code_font_size);
+
+        // Theme handling
+        if (config.theme === 'light') {
+          root.setAttribute('data-color-mode', 'light');
+        } else if (config.theme === 'dark') {
+          root.setAttribute('data-color-mode', 'dark');
+        } else if (config.theme === 'auto') {
+          root.removeAttribute('data-color-mode');
+        }
+
+        // Code line numbers
+        if (config.code_line_numbers === true) {
+          if (!document.querySelector('script[src*="highlightjs-line-numbers"]')) {
+            const lnScript = document.createElement('script');
+            lnScript.src = 'https://cdn.jsdelivr.net/npm/highlightjs-line-numbers.js@2.8.0/dist/highlightjs-line-numbers.min.js';
+            lnScript.onload = () => {
+              if (contentEl) hljs.initLineNumbersOnLoad(contentEl);
+            };
+            document.head.appendChild(lnScript);
+          } else {
+            if (contentEl) hljs.initLineNumbersOnLoad(contentEl);
+          }
+        }
+
+        // Custom CSS injection
+        if (config.custom_css) {
+          const existing = document.getElementById('md-custom-css');
+          if (existing) existing.remove();
+          const style = document.createElement('style');
+          style.id = 'md-custom-css';
+          style.textContent = config.custom_css;
+          document.head.appendChild(style);
+        }
+      } catch (e) {
+        // Config fetch errors are non-fatal
+      }
+    }
+
     async function renderMarkdown(md) {
       // Pre-process mermaid blocks: mark them for later rendering
       const mermaidBlocks = [];
@@ -122,6 +183,8 @@
         overlay.classList.add('hidden');
         const md = await res.text();
         await renderMarkdown(md);
+        // Re-apply config after render (handles password retry and line numbers after highlight)
+        await applyDisplayConfig();
       } else if (res.status === 404) {
         contentEl.innerHTML = '<h1>Not Found</h1><p>This share does not exist or has been removed.</p>';
       } else {
@@ -141,7 +204,8 @@
       }
     });
 
-    // Initial load
+    // Initial load — config fetch runs in parallel with content fetch
+    applyDisplayConfig();
     loadContent('');
   </script>
 </body>

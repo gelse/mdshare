@@ -20,6 +20,7 @@ VS Code may display these directories with uppercase first letters, but the actu
 mdshare/                          # Project root
 ├── AGENT.md                      # AI agent project reference (this file)
 ├── Dockerfile                    # Single-stage production image
+├── Dockerfile.test               # CI unit test image (pytest + JUnit XML)
 ├── docker-compose.yml            # Single service definition
 ├── Makefile                      # Test/coverage targets
 ├── pytest.ini                    # Pytest configuration
@@ -30,7 +31,9 @@ mdshare/                          # Project root
 ├── backend/                      # Python/Flask API server + static viewer
 │   ├── __init__.py               # Package initialization
 │   ├── app.py                    # Flask application (5 routes, auth, upload)
-│   ├── requirements.txt          # Python dependencies (4 packages)
+│   ├── config.py                 # Configuration dataclass (env vars)
+│   ├── display_config.py         # Display defaults (YAML → frozen dataclass)
+│   ├── requirements.txt          # Python dependencies (5 packages)
 │   ├── static/                   # Static assets served by Flask
 │   │   ├── viewer.html           # Client-side Markdown viewer (CDN libraries)
 │   │   └── themes.css            # Dark/light mode CSS custom properties
@@ -112,6 +115,7 @@ mdshare/                          # Project root
 | `GET` | `/v/<id>` | None | Serve viewer HTML page |
 | `GET` | `/v/<id>/raw` | `?pw=<password>` if protected | Raw Markdown content |
 | `GET` | `/v/<id>/img/<filename>` | None | Serve uploaded image |
+| `GET` | `/v/<id>/config` | None | Return merged display config (global defaults + per-share overrides) |
 | `GET` | `/themes.css` | None | Dark/light theme CSS |
 
 ### Upload API Details
@@ -122,6 +126,7 @@ mdshare/                          # Project root
 - Fields:
   - `content` (required): Markdown text
   - `protected` (optional): `"yes"` or `"no"` (default: `"no"`)
+  - `display_config` (optional): JSON string with display overrides (any subset of the 8 display keys). Example: `{"theme":"dark","code_line_numbers":true}`.
   - Image files: any additional parts are saved as images
 
 **Response** (201 Created):
@@ -165,6 +170,7 @@ mdshare/                          # Project root
 | `MDSHARE_DATA_DIR` | No | `/app/data` | SQLite DB + image storage directory |
 | `MDSHARE_MAX_SIZE` | No | `16777216` | Max upload size in bytes (16 MB) |
 | `MDSHARE_BASE_URL` | No | *(auto-detected)* | Explicit base URL for share links (e.g. `https://mdshare.example.com`). Overrides auto-detection from `X-Forwarded-*` headers. |
+| `MDSHARE_DISPLAY_CONFIG` | No | *(auto-resolved)* | Path to display defaults YAML file (default: `${MDSHARE_DATA_DIR}/display.yaml`) |
 
 ### Storage Schema
 
@@ -174,6 +180,7 @@ CREATE TABLE IF NOT EXISTS shares (
     id TEXT PRIMARY KEY,
     content TEXT NOT NULL,
     password TEXT,           -- bcrypt hash, NULL for public shares
+    display_config TEXT,      -- JSON-serialized per-share display overrides
     created_at TEXT DEFAULT datetime('now')
 )
 ```
@@ -214,18 +221,13 @@ docker build -t mdshare .
 # Start the stack
 docker compose up -d
 
-# Run tests in Docker
-docker build -t mdshare:test -f- . <<'EOF'
-FROM python:3.13-slim
-RUN pip install pytest pytest-cov httpx
-COPY backend/ /app/backend/
-COPY requirements-dev.txt /app/
-RUN pip install -r /app/requirements-dev.txt
-WORKDIR /app
-CMD ["python", "-m", "pytest", "backend", "--junitxml=/app/junit.xml"]
-EOF
-docker run --name mdshare-test mdshare:test
-docker cp mdshare-test:/app/junit.xml .
+# Run tests in Docker (via compose profile)
+docker compose --profile test up --build --abort-on-container-exit --exit-code-from test
+docker compose --profile test down
+
+# Or manually with the test Dockerfile:
+docker build -t mdshare:test -f Dockerfile.test .
+docker run --rm -v ./test-results:/app/test-results mdshare:test
 ```
 
 ---
@@ -265,7 +267,7 @@ Integration tests live in `tests/integration/` and test an externally-deployed m
    - `Dockerfile` — single-stage production image
    - `Makefile` — test and coverage targets
    - `pytest.ini` — pytest configuration
-   - `backend/requirements.txt` — runtime Python dependencies (Flask, gunicorn, bcrypt, python-multipart)
+   - `backend/requirements.txt` — runtime Python dependencies (Flask, gunicorn, bcrypt, python-multipart, pyyaml)
    - `requirements-dev.txt` — development dependencies (pytest, pytest-cov, httpx)
    - `tests/` — integration test suite (external deployment HTTP tests)
 

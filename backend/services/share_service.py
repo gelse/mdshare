@@ -14,6 +14,7 @@ from backend.config import config
 from backend.services.image_handler import rewrite_image_urls
 from backend.storage import get_storage
 from backend.storage.abstract import StorageBackend
+from backend.display_config import display_config
 
 
 class ShareService:
@@ -70,6 +71,7 @@ class ShareService:
         ttl_hours: int | None = None,
         filenames: set[str] | None = None,
         doc_id: str | None = None,
+        display_config: dict | None = None,
     ) -> dict:
         """Create a new share and persist it.
 
@@ -88,6 +90,10 @@ class ShareService:
         doc_id : str | None
             Pre-generated document ID.  If ``None`` (the default) a new one
             is generated internally.
+        display_config : dict | None
+            Optional per-share display-config overrides.  Keys are validated
+            against the 8 known display-config keys.  Invalid keys are
+            stripped; invalid values raise :class:`ValueError`.
 
         Returns
         -------
@@ -98,7 +104,8 @@ class ShareService:
         Raises
         ------
         ValueError
-            If *content* is empty after stripping.
+            If *content* is empty after stripping, or *display_config* contains
+            invalid values.
         """
         content = content.strip()
         if not content:
@@ -119,6 +126,35 @@ class ShareService:
         )
         valid_until = self.compute_valid_until(ttl_hours)
 
+        # Validate and normalise per-share display-config overrides.
+        if display_config is not None:
+            if not isinstance(display_config, dict):
+                raise ValueError("invalid display_config: must be a dict")
+            _known = {
+                "font_family", "font_size", "line_height", "max_width",
+                "theme", "code_font_size", "code_line_numbers", "custom_css",
+            }
+            validated = {k: v for k, v in display_config.items() if k in _known}
+            for k, v in validated.items():
+                if k == "theme" and v not in ("light", "dark", "auto"):
+                    raise ValueError(
+                        f"invalid display_config: theme must be 'light', 'dark',"
+                        f" or 'auto', got {v!r}"
+                    )
+                if k == "code_line_numbers" and not isinstance(v, bool):
+                    raise ValueError(
+                        f"invalid display_config: code_line_numbers must be"
+                        f" bool, got {type(v).__name__}"
+                    )
+                if k in ("font_family", "font_size", "line_height",
+                         "max_width", "code_font_size", "custom_css") \
+                        and not isinstance(v, str):
+                    raise ValueError(
+                        f"invalid display_config: {k} must be a string,"
+                        f" got {type(v).__name__}"
+                    )
+            display_config = validated
+
         # Rewrite image references in the content *before* persisting.
         if filenames:
             content = rewrite_image_urls(content, doc_id, filenames)
@@ -129,6 +165,7 @@ class ShareService:
             "password": password_hash,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "valid_until": valid_until,
+            "display_config": display_config,
         }
         self.storage.create(doc_id, doc)
 
@@ -191,6 +228,28 @@ class ShareService:
             "created_at": doc.get("created_at"),
         }
 
+    def get_display_config(self, share_id: str) -> dict:
+        """Return display-config for a share with global fallback.
+
+        Starts from global defaults and overlays any per-share overrides.
+        If the share does not exist, global defaults are returned (the
+        caller — the viewer — handles the 404 case separately).
+
+        Returns
+        -------
+        dict
+            All eight display-config keys filled from global defaults
+            plus any per-share overrides.
+        """
+        defaults = display_config.get_defaults()
+        doc = self.storage.get(share_id)
+        if doc is None:
+            return dict(defaults)
+        per_share = doc.get("display_config")
+        if not isinstance(per_share, dict):
+            return dict(defaults)
+        return {**defaults, **per_share}
+
     def health_check(self) -> dict:
         """Verify service is operational.
 
@@ -198,7 +257,7 @@ class ShareService:
         directory path.
         """
         try:
-            self.storage.list_active()
+            self.storage.list_active()  # type: ignore[return-value]
             storage_status = "ok"
         except Exception:  # noqa: BLE001
             storage_status = "degraded"
@@ -209,9 +268,17 @@ class ShareService:
             "data_dir": config.data_dir,
         }
 
-    def list_shares(self) -> list[dict]:
-        """Return all active (non-expired) shares."""
-        return self.storage.list_active()
+    def list_shares(self, page_size: int = 50, page: int = 1) -> tuple[list[dict], int]:
+        """Return a page of active (non-expired) shares.
+
+        Args:
+            page_size: Number of shares per page (1–200, default 50).
+            page: 1-based page number (default 1).
+
+        Returns:
+            A tuple of (list of share dicts, total count of matching rows).
+        """
+        return self.storage.list_active(page_size, page)
 
     def delete_share(self, share_id: str) -> bool:
         """Remove a share from storage.  Returns ``True`` on success."""
@@ -225,6 +292,42 @@ class ShareService:
         """Check whether a share ID exists (ignores expiry)."""
         return self.storage.exists(share_id)
 
+    def set_valid_until_date(self, ids: list[str], valid_until: str | None) -> dict:
+        """Batch-update ``valid_until`` for the given share IDs.
+
+        Validates that ``ids`` is non-empty and ``valid_until`` (when
+        not ``None``) is parseable as ISO 8601.
+
+        Args:
+            ids: List of share identifiers to update.  Must not be empty.
+            valid_until: ISO 8601 datetime string (e.g.
+                ``"2027-06-01T00:00:00"``), or ``None`` to clear the
+                expiry (make the share never expire).
+
+        Returns:
+            A dict ``{"updated": N, "not_found": M}`` where *updated*
+            is the number of rows actually changed and *not_found* is
+            the number of IDs that don't match any existing share.
+
+        Raises:
+            ValueError: If ``ids`` is empty or ``valid_until`` (when not
+                ``None``) is not valid ISO 8601.
+        """
+        if not ids:
+            raise ValueError("ids list must not be empty")
+
+        if valid_until is not None:
+            try:
+                datetime.fromisoformat(valid_until)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    f"Invalid date format: '{valid_until}'. "
+                    "Expected ISO 8601 (e.g. 2027-06-01T00:00:00)"
+                ) from None
+
+        updated = self.storage.update_valid_until(ids, valid_until)
+        not_found = len(ids) - updated
+        return {"updated": updated, "not_found": not_found}
 
 # Singleton instance — used by app.py, mcp_server.py, and the test suite.
 # get_storage() returns a shared SqliteStorage singleton, so all consumers

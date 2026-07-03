@@ -4,7 +4,10 @@ Thin Flask route layer — delegates business logic to ShareService,
 auth helpers, and image handlers.
 """
 
+import json
+import math
 import os
+from datetime import datetime
 
 from flask import Flask, request, jsonify, send_from_directory, abort
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -278,6 +281,15 @@ def share():
     else:
         ttl_hours = None  # use default in compute_valid_until
 
+    # Parse optional display-config JSON
+    raw_display = request.form.get("display_config", "")
+    display_config = None
+    if raw_display.strip():
+        try:
+            display_config = json.loads(raw_display)
+        except json.JSONDecodeError:
+            return jsonify({"error": "invalid display_config — must be valid JSON"}), 400
+
     # Collect uploaded filenames for URL rewriting
     filenames: set[str] = set()
     for key in request.files:
@@ -286,12 +298,16 @@ def share():
             filenames.add(file.filename)
 
     # Create share via service layer (generates ID, rewrites URLs, stores)
-    result = share_service.create_share(
-        content=content,
-        protected=protected,
-        ttl_hours=ttl_hours,
-        filenames=filenames,
-    )
+    try:
+        result = share_service.create_share(
+            content=content,
+            protected=protected,
+            ttl_hours=ttl_hours,
+            filenames=filenames,
+            display_config=display_config,
+        )
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
 
     doc_id = result["id"]
     view_password = result.get("password")
@@ -314,16 +330,59 @@ def share():
     )
 
 
+@app.route("/v/<doc_id>/config")
+def view_display_config(doc_id: str):
+    """Return display config for a share (global defaults + per-share overrides).
+
+    No auth required — same access level as viewing the page.
+    Always returns 200 with the full config object.
+    ---
+    tags: [View]
+    parameters:
+      - {name: doc_id, in: path, type: string, required: true, description: Share ID}
+    responses:
+      200:
+        description: Display configuration
+        schema:
+          type: object
+          properties:
+            font_family: {type: string}
+            font_size: {type: string}
+            line_height: {type: string}
+            max_width: {type: string}
+            theme: {type: string}
+            code_font_size: {type: string}
+            code_line_numbers: {type: boolean}
+            custom_css: {type: string}
+    """
+    config_dict = share_service.get_display_config(doc_id)
+    return jsonify(config_dict)
+
+
 @app.route("/api/admin/shares")
 def list_shares():
-    """List all active (non-expired) shares.
+    """List all active (non-expired) shares with pagination.
     ---
     tags: [Admin]
     security:
       - Bearer: []
+    parameters:
+      - in: query
+        name: page_size
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 200
+        description: Number of shares per page
+      - in: query
+        name: page
+        type: integer
+        default: 1
+        minimum: 1
+        description: Page number (1-based)
     responses:
       200:
-        description: List of active shares
+        description: Paginated list of active shares
         schema:
           type: object
           properties:
@@ -337,18 +396,118 @@ def list_shares():
                   created_at: {type: string}
                   valid_until: {type: string}
                   protected: {type: boolean}
-            count: {type: integer}
+            page: {type: integer}
+            page_size: {type: integer}
+            total_pages: {type: integer}
+            total_count: {type: integer}
+      400: {description: Invalid pagination parameters}
       401: {description: Missing or invalid master password}
     """
     if not _check_master_auth():
         return jsonify({"error": "unauthorized"}), 401
 
-    shares = storage.list_active()
+    # Parse and validate pagination parameters
+    try:
+        raw_page_size = request.args.get("page_size", "50")
+        raw_page = request.args.get("page", "1")
+        page_size = int(raw_page_size)
+        page = int(raw_page)
+    except (ValueError, TypeError):
+        return jsonify({"error": "page_size and page must be integers"}), 400
+
+    if page < 1:
+        return jsonify({"error": "page must be >= 1"}), 400
+    if page_size < 1 or page_size > 200:
+        return jsonify({"error": "page_size must be between 1 and 200"}), 400
+
+    shares, total_count = share_service.list_shares(page_size, page)
     base = _base_url()
     for share in shares:
         share["url"] = f"{base}/v/{share['id']}"
 
-    return jsonify({"shares": shares, "count": len(shares)})
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count > 0 else 1
+
+    return jsonify({
+        "shares": shares,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "total_count": total_count,
+    })
+
+
+@app.route("/api/admin/shares/validuntil", methods=["POST"])
+def set_valid_until():
+    """Batch-update valid_until for one or more shares.
+    ---
+    tags:
+      - admin
+    summary: Set valid_until date for shares
+    description: >
+      Sets (or clears) the ``valid_until`` field for an array of share IDs.
+      The date must be ISO 8601 format (e.g. ``"2027-06-01T00:00:00"``).
+      Pass ``null`` to clear the expiry (make shares never expire).
+    security:
+      - BearerAuth: []
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - ids
+          properties:
+            ids:
+              type: array
+              items:
+                type: string
+              description: Array of share IDs to update.
+            valid_until:
+              type: string
+              nullable: true
+              description: >
+                ISO 8601 datetime string, or ``null`` to clear expiry.
+              example: "2027-06-01T00:00:00"
+    responses:
+      200:
+        description: Batch update result.
+        schema:
+          type: object
+          properties:
+            updated:
+              type: integer
+              description: Number of rows actually updated.
+            not_found:
+              type: integer
+              description: Number of IDs that did not match any share.
+      400:
+        description: Invalid input (missing ids or bad date format).
+      401:
+        description: Missing or invalid master password.
+    """
+    if not _check_master_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json(silent=True)
+    if not data or "ids" not in data:
+        return jsonify({"error": "missing required field: ids"}), 400
+
+    ids = data["ids"]
+    valid_until = data.get("valid_until")  # None means clear expiry
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "ids must be a non-empty array"}), 400
+
+    if not all(isinstance(i, str) and i.strip() for i in ids):
+        return jsonify({"error": "each id must be a non-empty string"}), 400
+
+    try:
+        result = share_service.set_valid_until_date(ids, valid_until)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    return jsonify(result), 200
 
 
 # ---------------------------------------------------------------------------

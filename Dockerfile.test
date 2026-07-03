@@ -1,0 +1,17 @@
+# mdshare — test image for CI unit tests
+# Builds the backend with dev dependencies, outputs JUnit XML to /app/test-results/
+
+FROM python:3.13-slim
+WORKDIR /app
+
+ARG MDSHARE_VERSION=unknown
+ENV MDSHARE_VERSION=$MDSHARE_VERSION
+ENV PYTHONUNBUFFERED=1
+
+COPY backend/ /app/backend/
+COPY pytest.ini /app/
+COPY requirements-dev.txt /app/
+
+RUN pip install --no-cache-dir -r /app/requirements-dev.txt
+
+CMD ["python", "-m", "pytest", "backend", "--junitxml=/app/test-results/junit.xml"]
