@@ -2,11 +2,11 @@
 
 Minimal, self-hosted Markdown sharing service. Upload Markdown via API, get a clean URL with GitHub-style rendering — Mermaid diagrams, syntax highlighting, KaTeX math, and optional password protection.
 
-## Why?
+You're deep in a conversation with an AI — it just generated a detailed analysis, a code review, a diagram, or a structured report. You need to share that output with someone who doesn't have access to the AI. Copy-paste into a chat? Email a screenshot?
 
-Share AI-generated Markdown instantly. One `curl` command, one URL. No accounts, no databases, no complexity.
+mdshare is designed as a **"share button" for AI output**. One `curl` command, one URL, done. The recipient opens a clean, GitHub-style rendered page — with syntax highlighting, diagrams, math rendering — without needing any account, tool, or access to the AI.
 
-## Features
+### Features
 
 - **PUT API upload** — Single endpoint with Bearer token auth, accepts `multipart/form-data`
 - **Password-protected shares** — Optional `protected` flag generates a random view password
@@ -15,7 +15,24 @@ Share AI-generated Markdown instantly. One `curl` command, one URL. No accounts,
 - **SQLite storage** — Single `shares` table, no external database needed
 - **Single container** — Flask + Gunicorn, no nginx, no microservices
 
-## Quick Start
+---
+
+## What mdshare is NOT
+
+mdshare is intentionally focused. It solves one problem — sharing rendered Markdown — and does not try to be everything.
+
+- **NOT a CMS** — No pages, no navigation tree, no site structure. Each share is a standalone document.
+- **NOT a blog platform** — No archives, no RSS, no metadata beyond creation time and expiry.
+- **NOT a collaboration tool** — No editing, no comments, no versioning, no multi-user access.
+- **NOT a general file host** — Markdown only. Images are only accepted as inline Markdown attachments.
+- **NOT a pastebin with public discovery** — No index, no search, no public listing. Shares are URL-access only.
+- **NOT permanent storage** — Shares expire by default (TTL = 7 days). mdshare is for sharing, not archiving.
+
+---
+
+## Quick Installation
+
+The fastest way to run mdshare is with Docker Compose:
 
 ```bash
 # Clone and start
@@ -24,29 +41,56 @@ cd mdshare
 echo "MDSHARE_MASTER_PASSWORD=your-secret-password" > .env
 docker compose up -d
 
-# Upload Markdown
+# Upload your first Markdown share
 curl -X PUT http://localhost:8080/api/share \
   -H "Authorization: Bearer your-secret-password" \
-  -F "content=# Hello World" \
+  -F "content=$(cat <<'EOF'
+# Hello from AI
+
+Rendered with **GitHub-style** Markdown, diagrams, and syntax highlighting.
+
+```python
+def greet():
+    print("Hello, world!")
+```
+EOF
+)" \
   -F "protected=no"
 
-# Response: {"url": "http://localhost:8080/v/abc123def456"}
+# Response: {"url": "http://localhost:8080/v/<12-char-id>"}
+# Open the URL in a browser — instantly rendered.
+```
 
+```bash
 # Upload with password protection
 curl -X PUT http://localhost:8080/api/share \
   -H "Authorization: Bearer your-secret-password" \
-  -F "content=# Secret Document" \
+  -F "content=# Confidential Report" \
   -F "protected=yes"
 
 # Response: {"url": "http://localhost:8080/v/xyz789abc012", "password": "aB3dEfGh"}
-
-# View: open http://localhost:8080/v/xyz789abc012
-# Enter password "aB3dEfGh" when prompted
+# Open the URL, enter the password when prompted.
 ```
 
-## API
+**That's it.** One environment variable, one container, one upload command. The default TTL is 7 days — set `ttl=0` for no expiry.
 
-### `PUT /api/share`
+---
+
+## Long Installation
+
+### Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `MDSHARE_MASTER_PASSWORD` | Yes | `changeme` | Master password for upload API auth |
+| `MDSHARE_DATA_DIR` | No | `/app/data` | SQLite DB + image storage directory |
+| `MDSHARE_MAX_SIZE` | No | `16777216` | Max upload size in bytes (16 MB) |
+| `MDSHARE_BASE_URL` | No | *(auto-detected)* | Explicit base URL for share links (e.g. `https://mdshare.example.com`). Overrides auto-detection from `X-Forwarded-*` headers. |
+| `MDSHARE_DISPLAY_CONFIG` | No | `${MDSHARE_DATA_DIR}/display.yaml` | Path to display defaults YAML file |
+
+### API Reference
+
+#### `PUT /api/share`
 
 Upload Markdown content with optional images and password protection.
 
@@ -93,11 +137,11 @@ Upload Markdown content with optional images and password protection.
 | 404 | Share expired or not found |
 | 413 | Content exceeds size limit |
 
-### `GET /v/<id>`
+#### `GET /v/<id>`
 
 Serves the viewer HTML page. Always accessible — the viewer handles password prompting for protected content.
 
-### `GET /v/<id>/raw`
+#### `GET /v/<id>/raw`
 
 Returns raw Markdown content. For protected shares, requires `?pw=<password>` query parameter.
 
@@ -108,15 +152,15 @@ Returns raw Markdown content. For protected shares, requires `?pw=<password>` qu
 | 401 | Wrong password |
 | 404 | Share not found |
 
-### `GET /v/<id>/img/<filename>`
+#### `GET /v/<id>/img/<filename>`
 
 Serves uploaded images for a share. No authentication required.
 
-### `GET /api/health`
+#### `GET /api/health`
 
 Health check endpoint. Returns `{"status": "ok"}`.
 
-### `GET /api/admin/shares`
+#### `GET /api/admin/shares`
 
 List all active (non-expired) shares with pagination. Requires master password authentication.
 
@@ -127,7 +171,7 @@ List all active (non-expired) shares with pagination. Requires master password a
 | `page_size` | int | `50` | Number of shares per page (1–200) |
 
 **Headers**:
-- `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>` — master password for authentication
+- `Authorization: Bearer <MDSHARE_MASTER_PASSWORD>`
 
 **Response** (200 OK):
 ```json
@@ -154,255 +198,22 @@ List all active (non-expired) shares with pagination. Requires master password a
 | 400 | Invalid query parameter (page < 1, page_size out of range, non-integer value) |
 | 401 | Missing or invalid `Authorization` header |
 
-### `GET /api/docs/`
+#### `GET /api/docs/`
 
 Auto-generated Swagger UI documentation for the entire REST API. Browse all endpoints, inspect request/response schemas, and use the **Authorize** button to set your Bearer token for interactive try-out.
 
 The OpenAPI specification is rendered via Flasgger (Swagger 2.0) and includes:
-
 - **Try it out** for all endpoints — click **Authorize** and paste `Bearer <MDSHARE_MASTER_PASSWORD>` to enable authenticated requests
 - **Request schemas** — JSON bodies, query parameters, path parameters, and multipart form fields documented
 - **Response schemas** — Status codes and response body structures for every endpoint
 
 No authentication required to view the documentation.
 
-## Configuration
+### Reverse Proxy
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `MDSHARE_MASTER_PASSWORD` | Yes | `changeme` | Master password for upload API auth |
-| `MDSHARE_DATA_DIR` | No | `/app/data` | SQLite DB + image storage directory |
-| `MDSHARE_MAX_SIZE` | No | `16777216` | Max upload size in bytes (16 MB) |
-| `MDSHARE_BASE_URL` | No | *(auto-detected)* | Explicit base URL for share links (e.g. `https://mdshare.example.com`). Overrides auto-detection from request headers. |
-| `MDSHARE_DISPLAY_CONFIG` | No | `${MDSHARE_DATA_DIR}/display.yaml` | Path to display defaults YAML file. Overrides the default `${MDSHARE_DATA_DIR}/display.yaml` location. |
+mdshare is ready to run behind a reverse proxy. It respects `X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` headers (via Werkzeug's `ProxyFix` middleware).
 
-## Display Customization
-
-mdshare supports flexible display customization through **global defaults** (optional YAML file) and **per-share overrides** (upload-time JSON). The viewer applies these settings as CSS custom properties on the rendered page.
-
-### Display Options
-
-| Option | Key | Type | Default | Description |
-|--------|-----|------|---------|-------------|
-| Font Family | `font_family` | string | `"system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"` | CSS `font-family` for body text |
-| Font Size | `font_size` | string | `"16px"` | Base text size (any valid CSS size) |
-| Line Height | `line_height` | string | `"1.6"` | Text line height |
-| Max Width | `max_width` | string | `"900px"` | Maximum content width (any valid CSS width) |
-| Theme | `theme` | string | `"auto"` | `"light"`, `"dark"`, or `"auto"` (follows system preference) |
-| Code Font Size | `code_font_size` | string | `"14px"` | Font size for code blocks |
-| Code Line Numbers | `code_line_numbers` | boolean | `false` | Show line numbers in code blocks |
-| Custom CSS | `custom_css` | string | `""` | Raw CSS string injected into viewer page |
-
-### Global Configuration via YAML
-
-Create a `display.yaml` file to set system-wide display defaults for all shares. The
-path resolution follows this priority:
-
-1. **`MDSHARE_DISPLAY_CONFIG`** environment variable (if set, uses exactly that path)
-2. **`${MDSHARE_DATA_DIR}/display.yaml`** (default, e.g. `/app/data/display.yaml`)
-
-The file is **optional** — if neither location exists, the hardcoded defaults apply.
-Invalid or malformed YAML is silently ignored (falling back to defaults).
-
-The repository ships a reference template at
-[`backend/display_defaults.yaml`](backend/display_defaults.yaml) with all
-eight options listed and commented out. Copy this file as a starting point:
-
-```yaml
-# /app/data/display.yaml
-font_family: "Georgia, serif"
-theme: "dark"
-code_line_numbers: true
-```
-
-#### Deploying with Docker Compose
-
-To provide a custom `display.yaml` in a Docker Compose deployment, mount it
-as a bind volume at the expected path inside the container:
-
-```yaml
-services:
-  mdshare:
-    # … existing configuration …
-    volumes:
-      - mdshare_data:/data
-      - ./display.yaml:/data/display.yaml   # 👈 mount your custom display config
-```
-
-With `MDSHARE_DATA_DIR=/data` (the default in the shipped `docker-compose.yml`),
-the file at `./display.yaml` (relative to your project directory) becomes active
-at `/data/display.yaml` inside the container.
-
-#### Deploying with `docker run`
-
-When running the container directly, mount the file with the `-v` flag:
-
-```bash
-docker run -d \
-  --name mdshare \
-  -p 8080:5000 \
-  -e MDSHARE_MASTER_PASSWORD=your-password \
-  -v mdshare_data:/data \
-  -v ./display.yaml:/data/display.yaml \
-  mdshare
-```
-
-#### Using a Custom Path via Environment Variable
-
-If you prefer to keep your config file in a different location (or mount it to a
-non-standard path inside the container), use `MDSHARE_DISPLAY_CONFIG`:
-
-```yaml
-services:
-  mdshare:
-    volumes:
-      - mdshare_data:/data
-      - ./my-configs/mdshare-display.yml:/etc/mdshare/display.yml
-    environment:
-      - MDSHARE_DISPLAY_CONFIG=/etc/mdshare/display.yml
-```
-
-#### Complete Example
-
-Below is a full `docker-compose.yml` that includes a custom display configuration
-alongside the standard setup:
-
-```yaml
-services:
-  mdshare:
-    build:
-      context: .
-      args:
-        MDSHARE_VERSION: ${MDSHARE_VERSION:-unknown}
-    container_name: mdshare
-    restart: unless-stopped
-    ports:
-      - "8080:5000"
-    volumes:
-      - mdshare_data:/data
-      # Mount your custom display config — create ./display.yaml first
-      - ./display.yaml:/data/display.yaml
-    environment:
-      - MDSHARE_DATA_DIR=/data
-      - MDSHARE_MASTER_PASSWORD=change-me-to-a-secure-password
-      - MDSHARE_MAX_SIZE=5242880
-      # Uncomment to pin an explicit display config path:
-      # - MDSHARE_DISPLAY_CONFIG=/data/display.yaml
-      # Uncomment when running behind a reverse proxy:
-      # - MDSHARE_BASE_URL=https://mdshare.example.com
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').getcode() == 200 else 1)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-
-volumes:
-  mdshare_data:
-```
-
-#### Verifying the Configuration
-
-After starting the container, upload a share and inspect its merged config endpoint:
-
-```bash
-# Upload test content
-curl -X PUT http://localhost:8080/api/share \
-  -H "Authorization: Bearer your-password" \
-  -F "content=# Hello" \
-  -F "protected=no"
-
-# Response includes the share ID, e.g. "url": "http://localhost:8080/v/abc123def456"
-
-# Fetch the merged display config
-curl http://localhost:8080/v/abc123def456/config
-
-# Output — the keys you set in display.yaml will reflect your custom values:
-# {
-#   "font_family": "Georgia, serif",
-#   "font_size": "16px",
-#   "line_height": "1.6",
-#   "max_width": "900px",
-#   "theme": "dark",
-#   "code_font_size": "14px",
-#   "code_line_numbers": true,
-#   "custom_css": ""
-# }
-```
-
-Note that only **known keys** are accepted. Unknown keys in the YAML file are
-silently stripped. See the
-[display options table](#display-options) above for the complete list of
-supported keys and their types.
-
-### Per-Share Override at Upload
-
-Pass a `display_config` JSON form field to override any subset of the 8 display options for a single share:
-
-```bash
-# Dark theme with code line numbers
-curl -X PUT https://mdshare.example.com/api/share \
-  -H "Authorization: Bearer $MDSHARE_MASTER_PASSWORD" \
-  -F 'content=# Hello World' \
-  -F 'display_config={"theme":"dark","code_line_numbers":true}'
-
-# Custom font, size, and max width
-curl -X PUT https://mdshare.example.com/api/share \
-  -H "Authorization: Bearer $MDSHARE_MASTER_PASSWORD" \
-  -F 'content=# Narrow Article' \
-  -F 'display_config={"font_family":"Georgia, serif","font_size":"18px","max_width":"800px"}'
-```
-
-The viewer fetches the merged config (global defaults + per-share overrides) via `GET /v/<id>/config` and applies it automatically.
-
-### CSS Custom Properties Reference
-
-The viewer exposes all display values as CSS custom properties on the `<html>` element. You can target them in your own stylesheets or in the `custom_css` option:
-
-```css
-/* --md-font-family      — body font family   */
-/* --md-font-size         — base text size     */
-/* --md-line-height       — text line height   */
-/* --md-max-width         — content max-width  */
-/* --md-code-font-size    — code block size    */
-```
-
-### Example Recipes
-
-#### Serif Blog Posts
-```bash
-curl -X PUT ... \
-  -F 'display_config={"font_family":"Georgia, serif","font_size":"18px","max_width":"720px"}'
-```
-Georgia font, larger text, narrower reading width — ideal for long-form content.
-
-#### Code-Focused Shares
-```bash
-curl -X PUT ... \
-  -F 'display_config={"theme":"dark","code_line_numbers":true,"code_font_size":"16px"}'
-```
-Dark theme with line numbers and larger code font — great for sharing code snippets.
-
-#### Branded Shares
-```bash
-curl -X PUT ... \
-  -F 'display_config={"custom_css":".header{background:#333;color:#fff;padding:1em;text-align:center}"}'
-```
-Inject a company header/footer via custom CSS — perfect for client-facing shares.
-
-#### Light-Only Share
-```bash
-curl -X PUT ... \
-  -F 'display_config={"theme":"light"}'
-```
-Force light theme regardless of system preference.
-
-## Reverse Proxy
-
-mdshare is ready to run behind a reverse proxy. It respects
-`X-Forwarded-Proto`, `X-Forwarded-Host`, and `X-Forwarded-Port` headers
-(via Werkzeug's `ProxyFix` middleware).
-
-### nginx example
+#### nginx
 
 ```nginx
 server {
@@ -416,12 +227,13 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Host $host;
         proxy_set_header X-Forwarded-Port $server_port;
-        client_max_body_size 16m;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 ```
 
-### Traefik labels (Docker Compose)
+#### Traefik (Docker Compose labels)
 
 ```yaml
 labels:
@@ -429,41 +241,20 @@ labels:
   - "traefik.http.services.mdshare.loadbalancer.server.port=5000"
 ```
 
-If auto-detection doesn't produce the correct URL, set
-`MDSHARE_BASE_URL=https://mdshare.example.com` explicitly.
+If auto-detection doesn't produce the correct URL, set `MDSHARE_BASE_URL=https://mdshare.example.com` explicitly.
 
-## Upload with Images
-
-```bash
-# Markdown file referencing local images
-cat > post.md << 'EOF'
-# Screenshot
-![screenshot](screenshot.png)
-EOF
-
-# Upload with image
-curl -X PUT http://localhost:8080/api/share \
-  -H "Authorization: Bearer your-secret-password" \
-  -F "content=@post.md" \
-  -F "protected=no" \
-  -F "screenshot.png=@screenshot.png"
-```
-
-Image references in Markdown (like `![alt](filename.png)`) are automatically rewritten to the correct `/v/<id>/img/filename.png` path.
-
-## MCP Server
+### MCP Server
 
 mdshare exposes a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) endpoint at `/api/mcp`, allowing AI agents (Claude, Roo Code, Cursor, etc.) to create, retrieve, and inspect Markdown shares directly.
 
-### Endpoint
-
+**Endpoint**:
 ```
 https://mdshare.example.com/api/mcp
 ```
 
-The endpoint uses **Streamable HTTP** transport (stateless, JSON responses). No separate process or port — the MCP handler shares the same uvicorn process as the REST API.
+The endpoint uses **Streamable HTTP** transport (stateless, JSON responses). No separate process or port — the MCP handler shares the same process as the REST API.
 
-### Available Tools
+#### Available Tools
 
 | Tool | Description |
 |------|-------------|
@@ -471,14 +262,13 @@ The endpoint uses **Streamable HTTP** transport (stateless, JSON responses). No 
 | `get_share` | Retrieve raw Markdown content. Provide password for protected shares. |
 | `get_share_info` | Check if a share exists and whether it's password-protected, without returning content. |
 | `health_check` | Verify the service is operational (storage backend reachable). |
-| `list_shares` | List all active (non-expired) shares with pagination. Supports `page_size` (1–200, default 50) and `page` (default 1) parameters. Returns `page`, `page_size`, `total_pages`, and `total_count` metadata. |
+| `list_shares` | List all active (non-expired) shares with pagination. Supports `page_size` (1–200, default 50) and `page` (default 1) parameters. Returns pagination metadata. |
 
-### Client Configuration
+#### Client Configuration
 
 Add mdshare to your MCP client's configuration. Replace `mdshare.example.com` with your actual deployment host.
 
-#### Roo Code / VS Code
-
+**Roo Code / VS Code**:
 ```json
 {
   "mcpServers": {
@@ -490,10 +280,7 @@ Add mdshare to your MCP client's configuration. Replace `mdshare.example.com` wi
 }
 ```
 
-#### Claude Desktop
-
-In `claude_desktop_config.json`:
-
+**Claude Desktop**:
 ```json
 {
   "mcpServers": {
@@ -505,8 +292,7 @@ In `claude_desktop_config.json`:
 }
 ```
 
-#### Generic (any MCP client with Streamable HTTP support)
-
+**Generic (any MCP client with Streamable HTTP support)**:
 ```json
 {
   "mcpServers": {
@@ -519,13 +305,13 @@ In `claude_desktop_config.json`:
 
 After configuration, the AI agent automatically discovers all five tools via the MCP handshake. No additional setup or API keys required.
 
-## Development
+### Development
 
-### Prerequisites
+#### Prerequisites
 - Python 3.13+
 - Docker (for containerized deployment)
 
-### Setup
+#### Setup
 ```bash
 # Create virtual environment
 python -m venv venv
@@ -544,7 +330,7 @@ make test
 make test-coverage
 ```
 
-### Running Locally
+#### Running Locally
 ```bash
 # Without Docker
 MDSHARE_MASTER_PASSWORD=dev-password \
@@ -552,7 +338,7 @@ MDSHARE_DATA_DIR=./data \
 python -m flask --app backend.app run --port 5000
 ```
 
-### Docker Build
+#### Docker Build
 ```bash
 # Build image
 docker build -t mdshare .
@@ -569,17 +355,15 @@ CMD ["python", "-m", "pytest", "backend", "--junitxml=/app/junit.xml"]
 DOCKERFILE
 ```
 
-### Integration Tests
+#### Integration Tests
 
 Integration tests in [`tests/integration/`](tests/integration/) exercise all HTTP endpoints (health, upload, view, raw, images, themes) against a **separately deployed** mdshare instance — no Docker containers are managed by the test suite itself.
 
-**Prerequisites:**
-
+**Prerequisites**:
 - A running mdshare instance accessible over HTTP
 - [`httpx`](https://www.python-httpx.org/) and `pytest` installed (`pip install -r requirements-dev.txt`)
 
-**Running against a specific URL:**
-
+**Running against a specific URL**:
 ```bash
 # Set the target deployment
 export DEPLOYMENT_HOST=http://192.168.1.100:5000
@@ -594,11 +378,11 @@ make test-integration
 python -m pytest tests/integration/ -v -m integration
 ```
 
-The [`integration_base_url`](tests/integration/conftest.py) fixture reads `DEPLOYMENT_HOST` from the environment. If unset, all integration tests are skipped. Before yielding, the fixture polls `GET /api/health` (up to 30 seconds) to confirm the deployment is reachable, so you can run the command as soon as the container starts.
+The [`integration_base_url`](tests/integration/conftest.py) fixture reads `DEPLOYMENT_HOST` from the environment. If unset, all integration tests are skipped. Before yielding, the fixture polls `GET /api/health` (up to 30 seconds) to confirm the deployment is reachable.
 
 **CI usage:** The [`integration-test.yml`](.forgejo/workflows/integration-test.yml) workflow is triggered manually via `workflow_dispatch` with `deployment_host` and `deployment_master_password` inputs.
 
-## Database Migration
+### Database Migration
 
 The app auto-migrates the SQLite schema on startup via a try/except `ALTER TABLE` — no manual steps required for new or existing deployments. For reference, the migration adds a single column:
 
@@ -610,12 +394,141 @@ This column stores an ISO 8601 UTC timestamp. `NULL` means the share never expir
 
 ---
 
-## Version
+### Version
 
 **2.0.0** — Retention time / TTL feature
 
-## License
+### License
 
 Licensed under the [Apache License, Version 2.0](LICENSE).
 
-Copyright 2026 Werner Schiller <github@gelse.net>. See [`NOTICE`](NOTICE) for attribution details.
+Copyright 2026 Werner Schiller \<github@gelse.net\>. See [`NOTICE`](NOTICE) for attribution details.
+
+---
+
+## Customizing
+
+### Display Customization
+
+mdshare supports flexible display customization through **global defaults** (optional YAML file) and **per-share overrides** (upload-time JSON). The viewer applies these settings as CSS custom properties on the rendered page.
+
+#### Display Options
+
+| Option | Key | Type | Default | Description |
+|--------|-----|------|---------|-------------|
+| Font Family | `font_family` | string | `"system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"` | CSS `font-family` for body text |
+| Font Size | `font_size` | string | `"16px"` | Base text size (any valid CSS size) |
+| Line Height | `line_height` | string | `"1.6"` | Text line height |
+| Max Width | `max_width` | string | `"900px"` | Maximum content width (any valid CSS width) |
+| Theme | `theme` | string | `"auto"` | `"light"`, `"dark"`, or `"auto"` (follows system preference) |
+| Code Font Size | `code_font_size` | string | `"14px"` | Font size for code blocks |
+| Code Line Numbers | `code_line_numbers` | boolean | `false` | Show line numbers in code blocks |
+| Custom CSS | `custom_css` | string | `""` | Raw CSS string injected into viewer page |
+
+#### Global Configuration via YAML
+
+Create a `display.yaml` file to set system-wide display defaults for all shares. The path resolution follows this priority:
+
+1. **`MDSHARE_DISPLAY_CONFIG`** environment variable (if set, uses exactly that path)
+2. **`${MDSHARE_DATA_DIR}/display.yaml`** (default, e.g. `/app/data/display.yaml`)
+
+The file is **optional** — if neither location exists, the hardcoded defaults apply. Invalid or malformed YAML is silently ignored (falling back to defaults).
+
+The repository ships a reference template at [`backend/display_defaults.yaml`](backend/display_defaults.yaml) with all eight options listed and commented out. Copy this file as a starting point:
+
+```yaml
+# /app/data/display.yaml
+font_family: "Georgia, serif"
+theme: "dark"
+code_line_numbers: true
+```
+
+##### Deploying with Docker Compose
+
+Bind-mount your `display.yaml` into the container's data directory:
+
+```yaml
+services:
+  mdshare:
+    image: mdshare:latest
+    volumes:
+      - ./display.yaml:/app/data/display.yaml:ro
+```
+
+Or set `MDSHARE_DISPLAY_CONFIG` to an arbitrary path:
+
+```yaml
+services:
+  mdshare:
+    image: mdshare:latest
+    environment:
+      - MDSHARE_DISPLAY_CONFIG=/config/display.yaml
+    volumes:
+      - ./display.yaml:/config/display.yaml:ro
+```
+
+#### Per-Share Overrides via JSON
+
+Override any display option at upload time by passing `display_config` as a JSON-formatted form field. These merge on top of the global defaults:
+
+```bash
+curl -X PUT http://localhost:8080/api/share \
+  -H "Authorization: Bearer your-secret-password" \
+  -F "content=# Custom Styled Document" \
+  -F 'display_config={"theme":"dark","code_line_numbers":true}'
+```
+
+Only the keys you provide are overridden; all other options fall through to the global defaults (or hardcoded defaults).
+
+#### Example Use-Cases
+
+##### Long-Form Content
+```bash
+curl -X PUT ... \
+  -F 'display_config={"font_family":"Georgia, serif","font_size":"20px","max_width":"700px"}'
+```
+
+Georgia font, larger text, narrower reading width — ideal for long-form content.
+
+##### Code-Focused Shares
+```bash
+curl -X PUT ... \
+  -F 'display_config={"theme":"dark","code_line_numbers":true,"code_font_size":"16px"}'
+```
+
+Dark theme with line numbers and larger code font — great for sharing code snippets.
+
+##### Branded Shares
+```bash
+curl -X PUT ... \
+  -F 'display_config={"custom_css":".header{background:#333;color:#fff;padding:1em;text-align:center}"}'
+```
+
+Inject a company header/footer via custom CSS — perfect for client-facing shares.
+
+##### Light-Only Share
+```bash
+curl -X PUT ... \
+  -F 'display_config={"theme":"light"}'
+```
+
+Force light theme regardless of system preference.
+
+### Upload with Images
+
+```bash
+# Markdown file referencing local images
+cat > post.md << 'EOF'
+# Screenshot
+![screenshot](screenshot.png)
+EOF
+
+# Upload with image
+curl -X PUT http://localhost:8080/api/share \
+  -H "Authorization: Bearer your-secret-password" \
+  -F "content=@post.md" \
+  -F "protected=no" \
+  -F "screenshot.png=@screenshot.png"
+```
+
+Image references in Markdown (like `![alt](filename.png)`) are automatically rewritten to the correct `/v/<id>/img/filename.png` path.
