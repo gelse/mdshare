@@ -20,6 +20,7 @@ VS Code may display these directories with uppercase first letters, but the actu
 mdshare/                          # Project root
 ├── AGENT.md                      # AI agent project reference (this file)
 ├── Dockerfile                    # Single-stage production image
+├── Dockerfile.test               # CI unit test image (pytest + JUnit XML)
 ├── docker-compose.yml            # Single service definition
 ├── Makefile                      # Test/coverage targets
 ├── pytest.ini                    # Pytest configuration
@@ -227,18 +228,13 @@ docker build -t mdshare .
 # Start the stack
 docker compose up -d
 
-# Run tests in Docker
-docker build -t mdshare:test -f- . <<'EOF'
-FROM python:3.13-slim
-RUN pip install pytest pytest-cov httpx
-COPY backend/ /app/backend/
-COPY requirements-dev.txt /app/
-RUN pip install -r /app/requirements-dev.txt
-WORKDIR /app
-CMD ["python", "-m", "pytest", "backend", "--junitxml=/app/junit.xml"]
-EOF
-docker run --name mdshare-test mdshare:test
-docker cp mdshare-test:/app/junit.xml .
+# Run tests in Docker (via compose profile)
+docker compose --profile test up --build --abort-on-container-exit --exit-code-from test
+docker compose --profile test down
+
+# Or manually with the test Dockerfile:
+docker build -t mdshare:test -f Dockerfile.test .
+docker run --rm -v ./test-results:/app/test-results mdshare:test
 ```
 
 ---

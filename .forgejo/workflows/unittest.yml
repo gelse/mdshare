@@ -14,10 +14,6 @@ jobs:
       - name: Run unit tests (Docker)
         run: make ci-unit-test
 
-      - name: Cleanup docker
-        if: always()
-        run: docker rm -f mdshare-test 2>/dev/null || true
-
       - name: Upload test results
         uses: actions/upload-artifact@v3
         if: always()
