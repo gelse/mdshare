@@ -174,6 +174,7 @@ No authentication required to view the documentation.
 | `MDSHARE_DATA_DIR` | No | `/app/data` | SQLite DB + image storage directory |
 | `MDSHARE_MAX_SIZE` | No | `16777216` | Max upload size in bytes (16 MB) |
 | `MDSHARE_BASE_URL` | No | *(auto-detected)* | Explicit base URL for share links (e.g. `https://mdshare.example.com`). Overrides auto-detection from request headers. |
+| `MDSHARE_DISPLAY_CONFIG` | No | `${MDSHARE_DATA_DIR}/display.yaml` | Path to display defaults YAML file. Overrides the default `${MDSHARE_DATA_DIR}/display.yaml` location. |
 
 ## Display Customization
 
@@ -194,15 +195,18 @@ mdshare supports flexible display customization through **global defaults** (opt
 
 ### Global Configuration via YAML
 
-Place a `display.yaml` file in your data directory to set system-wide display defaults:
+Create a `display.yaml` file to set system-wide display defaults for all shares. The
+path resolution follows this priority:
 
-```
-${MDSHARE_DATA_DIR}/display.yaml
-```
+1. **`MDSHARE_DISPLAY_CONFIG`** environment variable (if set, uses exactly that path)
+2. **`${MDSHARE_DATA_DIR}/display.yaml`** (default, e.g. `/app/data/display.yaml`)
 
-The path can be overridden with the `MDSHARE_DISPLAY_CONFIG` environment variable.
+The file is **optional** — if neither location exists, the hardcoded defaults apply.
+Invalid or malformed YAML is silently ignored (falling back to defaults).
 
-The file is **optional** — if missing, hardcoded defaults apply. Invalid or malformed files are silently ignored (falling back to defaults).
+The repository ships a reference template at
+[`backend/display_defaults.yaml`](backend/display_defaults.yaml) with all
+eight options listed and commented out. Copy this file as a starting point:
 
 ```yaml
 # /app/data/display.yaml
@@ -210,6 +214,125 @@ font_family: "Georgia, serif"
 theme: "dark"
 code_line_numbers: true
 ```
+
+#### Deploying with Docker Compose
+
+To provide a custom `display.yaml` in a Docker Compose deployment, mount it
+as a bind volume at the expected path inside the container:
+
+```yaml
+services:
+  mdshare:
+    # … existing configuration …
+    volumes:
+      - mdshare_data:/data
+      - ./display.yaml:/data/display.yaml   # 👈 mount your custom display config
+```
+
+With `MDSHARE_DATA_DIR=/data` (the default in the shipped `docker-compose.yml`),
+the file at `./display.yaml` (relative to your project directory) becomes active
+at `/data/display.yaml` inside the container.
+
+#### Deploying with `docker run`
+
+When running the container directly, mount the file with the `-v` flag:
+
+```bash
+docker run -d \
+  --name mdshare \
+  -p 8080:5000 \
+  -e MDSHARE_MASTER_PASSWORD=your-password \
+  -v mdshare_data:/data \
+  -v ./display.yaml:/data/display.yaml \
+  mdshare
+```
+
+#### Using a Custom Path via Environment Variable
+
+If you prefer to keep your config file in a different location (or mount it to a
+non-standard path inside the container), use `MDSHARE_DISPLAY_CONFIG`:
+
+```yaml
+services:
+  mdshare:
+    volumes:
+      - mdshare_data:/data
+      - ./my-configs/mdshare-display.yml:/etc/mdshare/display.yml
+    environment:
+      - MDSHARE_DISPLAY_CONFIG=/etc/mdshare/display.yml
+```
+
+#### Complete Example
+
+Below is a full `docker-compose.yml` that includes a custom display configuration
+alongside the standard setup:
+
+```yaml
+services:
+  mdshare:
+    build:
+      context: .
+      args:
+        MDSHARE_VERSION: ${MDSHARE_VERSION:-unknown}
+    container_name: mdshare
+    restart: unless-stopped
+    ports:
+      - "8080:5000"
+    volumes:
+      - mdshare_data:/data
+      # Mount your custom display config — create ./display.yaml first
+      - ./display.yaml:/data/display.yaml
+    environment:
+      - MDSHARE_DATA_DIR=/data
+      - MDSHARE_MASTER_PASSWORD=change-me-to-a-secure-password
+      - MDSHARE_MAX_SIZE=5242880
+      # Uncomment to pin an explicit display config path:
+      # - MDSHARE_DISPLAY_CONFIG=/data/display.yaml
+      # Uncomment when running behind a reverse proxy:
+      # - MDSHARE_BASE_URL=https://mdshare.example.com
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/api/health').getcode() == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  mdshare_data:
+```
+
+#### Verifying the Configuration
+
+After starting the container, upload a share and inspect its merged config endpoint:
+
+```bash
+# Upload test content
+curl -X PUT http://localhost:8080/api/share \
+  -H "Authorization: Bearer your-password" \
+  -F "content=# Hello" \
+  -F "protected=no"
+
+# Response includes the share ID, e.g. "url": "http://localhost:8080/v/abc123def456"
+
+# Fetch the merged display config
+curl http://localhost:8080/v/abc123def456/config
+
+# Output — the keys you set in display.yaml will reflect your custom values:
+# {
+#   "font_family": "Georgia, serif",
+#   "font_size": "16px",
+#   "line_height": "1.6",
+#   "max_width": "900px",
+#   "theme": "dark",
+#   "code_font_size": "14px",
+#   "code_line_numbers": true,
+#   "custom_css": ""
+# }
+```
+
+Note that only **known keys** are accepted. Unknown keys in the YAML file are
+silently stripped. See the
+[display options table](#display-options) above for the complete list of
+supported keys and their types.
 
 ### Per-Share Override at Upload
 
