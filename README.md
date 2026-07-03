@@ -431,14 +431,14 @@ mdshare supports flexible display customization through **global defaults** (opt
 Create a `display.yaml` file to set system-wide display defaults for all shares. The path resolution follows this priority:
 
 1. **`MDSHARE_DISPLAY_CONFIG`** environment variable (if set, uses exactly that path)
-2. **`${MDSHARE_DATA_DIR}/display.yaml`** (default, e.g. `/app/data/display.yaml`)
+2. **`${MDSHARE_DATA_DIR}/display.yaml`** (default, e.g. `/data/display.yaml`)
 
 The file is **optional** — if neither location exists, the hardcoded defaults apply. Invalid or malformed YAML is silently ignored (falling back to defaults).
 
 The repository ships a reference template at [`backend/display_defaults.yaml`](backend/display_defaults.yaml) with all eight options listed and commented out. Copy this file as a starting point:
 
 ```yaml
-# /app/data/display.yaml
+# /data/display.yaml
 font_family: "Georgia, serif"
 theme: "dark"
 code_line_numbers: true
@@ -453,7 +453,7 @@ services:
   mdshare:
     image: mdshare:latest
     volumes:
-      - ./display.yaml:/app/data/display.yaml:ro
+      - ./display.yaml:/data/display.yaml:ro
 ```
 
 Or set `MDSHARE_DISPLAY_CONFIG` to an arbitrary path:
