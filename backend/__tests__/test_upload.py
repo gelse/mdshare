@@ -17,6 +17,7 @@ class TestUploadHappyPath:
         assert resp.status_code == 201
         data = resp.get_json()
         assert "url" in data
+        assert "id" in data
         assert data["url"].startswith("http://localhost/v/")
         assert data.get("password") is None
 
@@ -30,6 +31,7 @@ class TestUploadHappyPath:
         assert resp.status_code == 201
         data = resp.get_json()
         assert "url" in data
+        assert "id" in data
         assert "password" in data
         assert len(data["password"]) == 8
 

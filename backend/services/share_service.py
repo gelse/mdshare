@@ -175,6 +175,127 @@ class ShareService:
             "valid_until": valid_until,
         }
 
+    def update_share(
+        self,
+        share_id: str,
+        content: str | None = None,
+        protected: bool | None = None,
+        ttl_hours: int | None = None,
+        filenames: set[str] | None = None,
+        display_config: dict | None = None,
+    ) -> dict:
+        """Update specific fields of an existing share.
+
+        Only the fields that are provided (not ``None``) will be modified.
+        Fields set to their empty/null equivalent are cleared in storage.
+
+        Parameters
+        ----------
+        share_id : str
+            Identifier of the share to update.
+        content : str | None
+            New Markdown content.  If provided and empty after stripping
+            a ``ValueError`` is raised.  ``None`` leaves content unchanged.
+        protected : bool | None
+            ``True`` to enable password protection (generates a new
+            random password).  ``False`` to make the share public
+            (clears any existing password hash).  ``None`` leaves the
+            current protection state unchanged.
+        ttl_hours : int | None
+            New time-to-live in hours from now.  ``0`` means never
+            expires.  ``None`` leaves the current expiry unchanged.
+        filenames : set[str] | None
+            Set of uploaded image filenames to rewrite in the content.
+            Only relevant when *content* is also being updated.
+        display_config : dict | None
+            New per-share display-config overrides.  An empty dict
+            clears overrides (reverts to global defaults).  ``None``
+            leaves the current display_config unchanged.
+
+        Returns
+        -------
+        dict
+            Domain result with keys ``id``, optionally ``password``
+            (when protection was toggled) and ``valid_until`` (when
+            ``ttl_hours`` was provided).
+
+        Raises
+        ------
+        ValueError
+            If the share does not exist, or *content* is empty,
+            or *display_config* contains invalid values.
+        """
+        existing = self.storage.get(share_id)
+        if existing is None:
+            raise ValueError(f"Share '{share_id}' not found")
+
+        fields: dict = {}
+        result: dict = {"id": share_id}
+
+        # ── Content ──────────────────────────────────────────────
+        if content is not None:
+            content = content.strip()
+            if not content:
+                raise ValueError("Content cannot be empty")
+            content_size = len(content.encode("utf-8"))
+            if content_size > config.max_size:
+                raise ValueError(
+                    f"content exceeds max size of {config.max_size} bytes"
+                )
+            if filenames:
+                content = rewrite_image_urls(content, share_id, filenames)
+            fields["content"] = content
+
+        # ── Password / protection ────────────────────────────────
+        if protected is True:
+            new_password = self.generate_password()
+            fields["password"] = (
+                bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+            )
+            result["password"] = new_password
+        elif protected is False:
+            fields["password"] = None
+
+        # ── TTL → valid_until ────────────────────────────────────
+        if ttl_hours is not None:
+            fields["valid_until"] = self.compute_valid_until(ttl_hours)
+            result["valid_until"] = fields["valid_until"]
+
+        # ── Display config ───────────────────────────────────────
+        if display_config is not None:
+            if not isinstance(display_config, dict):
+                raise ValueError("invalid display_config: must be a dict")
+            _known = {
+                "font_family", "font_size", "line_height", "max_width",
+                "theme", "code_font_size", "code_line_numbers", "custom_css",
+            }
+            validated = {k: v for k, v in display_config.items() if k in _known}
+            for k, v in validated.items():
+                if k == "theme" and v not in ("light", "dark", "auto"):
+                    raise ValueError(
+                        f"invalid display_config: theme must be 'light', 'dark',"
+                        f" or 'auto', got {v!r}"
+                    )
+                if k == "code_line_numbers" and not isinstance(v, bool):
+                    raise ValueError(
+                        f"invalid display_config: code_line_numbers must be"
+                        f" bool, got {type(v).__name__}"
+                    )
+                if k in ("font_family", "font_size", "line_height",
+                         "max_width", "code_font_size", "custom_css") \
+                        and not isinstance(v, str):
+                    raise ValueError(
+                        f"invalid display_config: {k} must be a string,"
+                        f" got {type(v).__name__}"
+                    )
+            # Empty dict means clear overrides
+            fields["display_config"] = validated if validated else None
+
+        # ── Persist ──────────────────────────────────────────────
+        self.storage.update(share_id, fields)
+
+        return result
+
     def get_share(
         self,
         share_id: str,
@@ -328,6 +449,7 @@ class ShareService:
         updated = self.storage.update_valid_until(ids, valid_until)
         not_found = len(ids) - updated
         return {"updated": updated, "not_found": not_found}
+
 
 # Singleton instance — used by app.py, mcp_server.py, and the test suite.
 # get_storage() returns a shared SqliteStorage singleton, so all consumers

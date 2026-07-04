@@ -29,6 +29,23 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
+    def update(self, doc_id: str, fields: dict) -> bool:
+        """Update specific fields of an existing share.
+
+        Args:
+            doc_id: Share identifier.
+            fields: Dict of field name → new value. Supported keys:
+                    ``content``, ``password``, ``valid_until``,
+                    ``display_config``. Only the keys present will be
+                    updated; absent keys are left unchanged.
+
+        Returns:
+            True if a matching row was found and updated, False if
+            no share with that ID exists.
+        """
+        ...
+
+    @abstractmethod
     def get(self, doc_id: str) -> dict | None:
         """Retrieve a share by ID.
 

@@ -34,7 +34,7 @@ mdshare is intentionally focused. It solves one problem — sharing rendered Mar
 
 The fastest way to run mdshare is with Docker Compose:
 
-```bash
+~~~bash
 # Clone and start
 git clone https://github.com/gelse/mdshare.git
 cd mdshare
@@ -59,9 +59,9 @@ EOF
 
 # Response: {"url": "http://localhost:8080/v/<12-char-id>"}
 # Open the URL in a browser — instantly rendered.
-```
+~~~
 
-```bash
+~~~bash
 # Upload with password protection
 curl -X PUT http://localhost:8080/api/share \
   -H "Authorization: Bearer your-secret-password" \
@@ -70,7 +70,7 @@ curl -X PUT http://localhost:8080/api/share \
 
 # Response: {"url": "http://localhost:8080/v/xyz789abc012", "password": "aB3dEfGh"}
 # Open the URL, enter the password when prompted.
-```
+~~~
 
 **That's it.** One environment variable, one container, one upload command. The default TTL is 7 days — set `ttl=0` for no expiry.
 

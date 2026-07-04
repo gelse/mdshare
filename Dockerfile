@@ -30,7 +30,7 @@ ENV PYTHONUNBUFFERED=1
 ENV MDSHARE_WORKERS=4
 
 # Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+RUN groupadd -r appuser && useradd -g appuser -d /app -s /sbin/nologin appuser \
     && chown -R appuser:appuser /app
 # Pre-create data volume mount point so the non-root user can write the SQLite DB
 RUN mkdir -p /data && chown appuser:appuser /data
