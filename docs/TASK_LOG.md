@@ -165,3 +165,21 @@
   - `requirements.txt` or `requirements-dev.txt` — no new dependencies (uses stdlib `logging`, `threading`)
   - Existing test `test_display_config.py` — no changes needed
 - **Tests**: 144/144 backend tests pass (`make ci-unit-test`).
+
+## 2026-07-04T06:14:00Z — Dockerfile hardening
+
+- **Goal**: Fix missing OCI metadata, security gaps, layer-caching issues, and redundant COPY in both `Dockerfile` and `Dockerfile.test`.
+- **Changes made**:
+  - `.dockerignore` (new, ~45 entries) — excludes `.git/`, `__pycache__/`, `Plans/`, `docs/`, `test-results/`, CI configs, IDE files, and other build-time-only artifacts from the Docker build context, reducing daemon payload and improving cache consistency.
+  - `Dockerfile`:
+    - **Removed** redundant `COPY backend/display_defaults.yaml /app/backend/display_defaults.yaml` (line 14) — already covered by `COPY backend/ /app/backend/` (no-op layer removed).
+    - **Added** 8 OCI-standard LABELs: `title`, `description`, `authors`, `url`, `source`, `documentation`, `licenses`, `vendor`.
+    - **Added** non-root `appuser` (`groupadd`/`useradd`/`chown`/`USER appuser`) — container no longer runs as root.
+    - **Added** `HEALTHCHECK` with 30s interval, 5s timeout, 3 retries, 10s start period — mirrors the `docker-compose.yml` healthcheck so the image is self-contained.
+    - **Added** `ENV MDSHARE_WORKERS=4` and switched `CMD` from exec form to `sh -c` form for variable expansion — workers count is now overridable at runtime via `-e MDSHARE_WORKERS=2`.
+  - `Dockerfile.test`:
+    - **Reordered** layers for cache efficiency: `COPY backend/requirements.txt` and `requirements-dev.txt` → `RUN pip install` → `COPY backend/` code last (previously copied all code before pip install, invalidating cache on every code change).
+    - **Added** 5 OCI-standard LABELs: `title`, `description`, `authors`, `source`, `licences`.
+    - **Added** non-root `appuser` (same pattern as production image).
+    - **Aligned** `CMD` with `docker-compose.yml` override by adding `-v` flag (verbosity).
+- **Risk**: Non-root user may cause write-permission issues with the host-mounted `test-results/` volume in CI. `mkdir -p test-results` in `Makefile` runs before Docker, so the directory is owned by the CI runner's UID. If CI fails, mitigation is `chmod 777 test-results` in the Makefile target or passing host UID as build arg.
