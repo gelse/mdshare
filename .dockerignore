@@ -1,0 +1,60 @@
+# Version control
+.git/
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+.pytest_cache/
+htmlcov/
+.coverage
+.eggs/
+*.egg-info/
+
+# Test artifacts
+test-results/
+
+# Documentation and planning (not needed in image)
+Plans/
+docs/
+*.md
+!README.md
+
+# Docker / CI files (not needed inside image)
+Dockerfile
+Dockerfile.test
+docker-compose.yml
+.dockerignore
+
+# Development tooling
+Makefile
+.github/
+.forgejo/
+.devcontainer/
+.roo/
+.roo.*
+.agent/
+
+# Scripts (build-time only, not runtime)
+scripts/
+
+# SSL / certs
+certs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+.gitignore
+.gitattributes
+LICENSE
+NOTICE
+
+# OS junk
+.DS_Store
+Thumbs.db

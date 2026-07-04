@@ -1,0 +1,60 @@
+# mdshare — unified Forgejo CI workflow
+#
+# test job:    Runs on every push/PR (all branches).
+#              Uses `make ci-unit-test` (Docker Compose) — same as the GitHub Actions CI.
+#
+# publish job: Runs only on the `release` branch, only after test passes.
+#              Builds via `make docker-build` (generic tags), then retags
+#              and pushes to the Forgejo container registry.
+#              Mirrors the same pattern used in .github/workflows/ci.yml for GHCR.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run unit tests (Docker Compose)
+        run: make ci-unit-test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: "0"
+        with:
+          name: test-results
+          path: test-results/
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/release'
+    runs-on: docker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Forgejo container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY_URL }}
+          username: ${{ vars.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build image (generic tags via Makefile)
+        run: make docker-build
+
+      - name: Retag and push to Forgejo registry
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          docker tag gelse/mdshare:latest     ${{ vars.REGISTRY_URL }}/${{ vars.REGISTRY_USER }}/mdshare:latest
+          docker tag gelse/mdshare:${SHORT_SHA} ${{ vars.REGISTRY_URL }}/${{ vars.REGISTRY_USER }}/mdshare:${SHORT_SHA}
+          docker push ${{ vars.REGISTRY_URL }}/${{ vars.REGISTRY_USER }}/mdshare:latest
+          docker push ${{ vars.REGISTRY_URL }}/${{ vars.REGISTRY_USER }}/mdshare:${SHORT_SHA}

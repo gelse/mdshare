@@ -265,7 +265,7 @@ Integration tests live in `tests/integration/` and test an externally-deployed m
 4. **Key config files**:
    - `docker-compose.yml` — single service definition
    - `Dockerfile` — single-stage production image
-   - `Makefile` — test and coverage targets
+   - `Makefile` — test, coverage, and build targets
    - `pytest.ini` — pytest configuration
    - `backend/requirements.txt` — runtime Python dependencies (Flask, gunicorn, bcrypt, python-multipart, pyyaml)
    - `requirements-dev.txt` — development dependencies (pytest, pytest-cov, httpx)
