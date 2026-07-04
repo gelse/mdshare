@@ -19,6 +19,10 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      checks: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,7 +38,7 @@ jobs:
           path: test-results/
 
       - name: Publish test results
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         if: always()
         with:
           name: Unit Tests
