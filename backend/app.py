@@ -322,11 +322,148 @@ def share():
         jsonify(
             {
                 "url": f"{_base_url()}/v/{doc_id}",
+                "id": doc_id,
                 "password": view_password,
                 "valid_until": result.get("valid_until"),
             }
         ),
         201,
+    )
+
+
+@app.route("/api/share/<doc_id>", methods=["PUT"])
+def update_share(doc_id: str):
+    """Update specific fields of an existing share.
+
+    **Auth**: ``Authorization: Bearer <master-password>`` header.
+
+    **Request body** (``multipart/form-data``):
+
+    ==============  ======  ==========================================
+    Field           Type    Description
+    ==============  ======  ==========================================
+    ``content``     string  Raw markdown text (optional).
+    ``protected``   string  ``"yes"`` / ``"no"`` (optional).
+    ``ttl``         integer Time-to-live in hours (optional).
+    *any file*      binary  Images referenced in the markdown.
+    ==============  ======  ==========================================
+
+    **Response** (200)::
+
+        {
+            "url": "https://host/v/<random-id>",
+            "id": "<doc-id>",
+            "password": "<cleartext>",  // only when protected=yes
+            "valid_until": "2026-07-08T05:50:42+00:00"
+        }
+
+    =======  ==================================
+    Status   Meaning
+    =======  ==================================
+    200      Share updated.
+    400      Missing/invalid field.
+    401      Invalid or missing master password.
+    404      Share not found.
+    =======  ==================================
+    ---
+    tags: [Share]
+    security:
+      - Bearer: []
+    consumes:
+      - multipart/form-data
+    parameters:
+      - {name: doc_id, in: path, type: string, required: true, description: Share ID to update}
+      - {name: content, in: formData, type: string, required: false, description: Raw Markdown text}
+      - {name: protected, in: formData, type: string, enum: [yes, no], required: false, description: Password-protect the share}
+      - {name: ttl, in: formData, type: integer, required: false, description: Time-to-live in hours}
+    responses:
+      200:
+        description: Share updated
+        schema:
+          type: object
+          properties:
+            url: {type: string}
+            id: {type: string}
+            password: {type: string}
+            valid_until: {type: string, format: date-time}
+      400: {description: Missing or invalid fields}
+      401: {description: Invalid or missing master password}
+      404: {description: Share not found}
+    """
+    if not _check_master_auth():
+        return jsonify({"error": "unauthorized"}), 401
+
+    content = request.form.get("content")
+    protected_raw = request.form.get("protected")
+    ttl_raw = request.form.get("ttl")
+    display_config_raw = request.form.get("display_config")
+
+    # Convert protected field
+    protected = None
+    if protected_raw is not None:
+        protected = protected_raw.strip().lower() in ("yes", "1", "true", "on")
+
+    # Convert ttl
+    ttl_hours = None
+    if ttl_raw is not None:
+        try:
+            ttl_hours = int(ttl_raw)
+            if ttl_hours < 0:
+                return jsonify({"error": "invalid ttl — must be a non-negative integer"}), 400
+        except (ValueError, TypeError):
+            return jsonify({"error": "invalid ttl — must be a non-negative integer"}), 400
+
+    # Parse display_config
+    display_config = None
+    if display_config_raw is not None:
+        try:
+            display_config = json.loads(display_config_raw)
+        except json.JSONDecodeError:
+            return jsonify({"error": "invalid display_config — must be valid JSON"}), 400
+
+    # Collect filenames from uploaded files
+    filenames = set()
+    for key in request.files:
+        file = request.files[key]
+        if file and file.filename:
+            filenames.add(file.filename)
+
+    # Check share exists before attempting update
+    info = share_service.get_share_info(doc_id)
+    if not info["exists"]:
+        return jsonify({"error": f"share '{doc_id}' not found"}), 404
+
+    try:
+        result = share_service.update_share(
+            share_id=doc_id,
+            content=content,
+            protected=protected,
+            ttl_hours=ttl_hours,
+            filenames=filenames if filenames else None,
+            display_config=display_config,
+        )
+    except ValueError as err:
+        return jsonify({"error": str(err)}), 400
+
+    doc_id = result["id"]
+    view_password = result.get("password")
+
+    # Persist uploaded image files
+    for key in request.files:
+        file = request.files[key]
+        if file and file.filename:
+            save_uploaded_image(file, doc_id, file.filename)
+
+    return (
+        jsonify(
+            {
+                "url": f"{_base_url()}/v/{doc_id}",
+                "id": doc_id,
+                "password": view_password,
+                "valid_until": result.get("valid_until"),
+            }
+        ),
+        200,
     )
 
 

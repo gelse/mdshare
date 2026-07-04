@@ -117,6 +117,40 @@ class SqliteStorage(StorageBackend):
         )
         self._conn.commit()
 
+    def update(self, doc_id: str, fields: dict) -> bool:
+        """Update specific fields of an existing share.
+
+        Builds a dynamic SET clause from the supplied *fields* dict so that
+        only the transported columns are modified.  ``display_config`` is
+        serialised automatically.
+
+        Args:
+            doc_id: Share identifier.
+            fields: Dict of column name → new value.
+
+        Returns:
+            True if a matching row was found and updated, False otherwise.
+        """
+        set_clauses: list[str] = []
+        params: list = []
+
+        for key in ("content", "password", "valid_until", "display_config"):
+            if key in fields:
+                set_clauses.append(f"{key} = ?")
+                if key == "display_config":
+                    params.append(self._serialize_display_config(fields[key]))
+                else:
+                    params.append(fields[key])
+
+        if not set_clauses:
+            return self.exists(doc_id)
+
+        params.append(doc_id)
+        sql = f"UPDATE shares SET {', '.join(set_clauses)} WHERE id = ?"
+        self._conn.execute(sql, params)
+        self._conn.commit()
+        return True
+
     def get(self, doc_id: str) -> dict | None:
         """Retrieve a share by ID, or None.
 
@@ -195,7 +229,7 @@ class SqliteStorage(StorageBackend):
         """Return a page of metadata for all non-expired shares.
 
         Expired shares (valid_until IS NOT NULL and <= now) are
-        excluded. Shares with valid_until = NULL never expire.
+        excluded.  Shares with valid_until = NULL never expire.
 
         Returns:
             A tuple of (list of share dicts, total count of matching rows).

@@ -201,3 +201,16 @@
 - **Changes made**:
   - `Dockerfile`: Removed `-r` flag from `useradd -r` so `appuser` gets a regular user UID (≥1000, typically 1000), matching host user UIDs for better volume permission compatibility.
   - `backend/storage/sqlite.py`: Added `os.access(config.data_dir, os.W_OK)` check in `SqliteStorage.__init__()` before `_init_schema()`, raising a clear `PermissionError` with an actionable message instead of the cryptic SQLite error.
+
+## 2026-07-04T14:57:00Z — Add PUT /api/share/<doc_id> update endpoint
+
+- **Problem**: No way to partially update an existing share — users had to delete and re-upload to change any field.
+- **Changes made**:
+  - `backend/storage/abstract.py`: Added `update()` abstract method to `StorageBackend` ABC — dynamic SET clause for partial field updates.
+  - `backend/storage/sqlite.py`: Implemented `SqliteStorage.update()` — builds `UPDATE shares SET ... WHERE id = ?` from only the supplied fields dict.
+  - `backend/services/share_service.py`: Added `ShareService.update_share()` — handles full field semantics: content validation, password lifecycle (protected→yes generates new pw, protected→no clears hash), TTL recalc, display config validation.
+  - `backend/app.py`: Added `PUT /api/share/<doc_id>` route with Swagger docstring, auth, field parsing, existence check (404 not found), image saving.
+  - `backend/app.py`: Added `"id"` field to existing `PUT /api/share` (create) response.
+  - `backend/__tests__/test_update.py`: New test file — 22 tests across happy path, auth, validation, and edge cases.
+  - `backend/__tests__/test_upload.py`: Added `assert "id" in data` assertions to create endpoint tests.
+  - `plans/update-share.md`: Created implementation plan.
