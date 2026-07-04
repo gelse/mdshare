@@ -1,4 +1,4 @@
-.PHONY: build test test-watch test-coverage test-integration ci-unit-test
+.PHONY: build docker-build test test-watch test-coverage test-integration ci-unit-test
 
 VENV = venv/bin/
 
@@ -7,6 +7,20 @@ VERSION ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 build:
 	docker compose build --build-arg MDSHARE_VERSION=$(VERSION)
+
+# Build the production Docker image with registry-agnostic tags.
+# Used by the CI release workflow — the workflow adds the ghcr.io prefix.
+# Also attaches OCI labels for better GHCR package metadata.
+docker-build:
+	docker build \
+	  --build-arg MDSHARE_VERSION=$(VERSION) \
+	  --label "org.opencontainers.image.source=https://github.com/gelse/mdshare" \
+	  --label "org.opencontainers.image.revision=$(shell git rev-parse HEAD)" \
+	  --label "org.opencontainers.image.version=$(VERSION)" \
+	  --label "org.opencontainers.image.created=$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+	  -t gelse/mdshare:$(VERSION) \
+	  -t gelse/mdshare:latest \
+	  .
 
 # Run test suite
 test:

@@ -383,6 +383,34 @@ The [`integration_base_url`](tests/integration/conftest.py) fixture reads `DEPLO
 
 **CI usage:** The [`integration-test.yml`](.forgejo/workflows/integration-test.yml) workflow is triggered manually via `workflow_dispatch` with `deployment_host` and `deployment_master_password` inputs.
 
+### CI/CD (GitHub Actions)
+
+The project uses a unified [`ci.yml`](.github/workflows/ci.yml) workflow with two jobs:
+
+| Job | Trigger | Purpose |
+|-----|---------|---------|
+| `test` | Every push / PR (all branches) | Runs `make ci-unit-test` (Docker Compose test profile), uploads results, publishes JUnit report |
+| `publish` | Push to `release` branch only, after `test` passes | Logs into GHCR, runs `make docker-build`, retags with `ghcr.io/gelse/mdshare` prefix, pushes `latest` + SHA tags |
+
+The `publish` job uses `needs: test` and a branch filter — only passing code on the `release` branch is published.
+
+#### Makefile Targets
+
+New target:
+
+```bash
+# Build production image with generic tags + OCI labels
+make docker-build
+```
+
+This produces `gelse/mdshare:latest` and `gelse/mdshare:<git-sha>` (registry-agnostic). The CI workflow adds the `ghcr.io/` prefix before pushing to the GitHub Container Registry.
+
+#### GitHub Container Registry (GHCR)
+
+- **Login**: Automatic via `docker/login-action@v3` using the built-in `GITHUB_TOKEN` (no secrets to configure)
+- **Tags pushed**: `ghcr.io/gelse/mdshare:latest` and `ghcr.io/gelse/mdshare:<short-sha>`
+- **Permission**: The `publish` job requests `packages: write` scoped to the job only
+
 ### Database Migration
 
 The app auto-migrates the SQLite schema on startup via a try/except `ALTER TABLE` — no manual steps required for new or existing deployments. For reference, the migration adds a single column:
