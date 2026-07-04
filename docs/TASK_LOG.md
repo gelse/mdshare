@@ -183,3 +183,13 @@
     - **Added** non-root `appuser` (same pattern as production image).
     - **Aligned** `CMD` with `docker-compose.yml` override by adding `-v` flag (verbosity).
 - **Risk**: Non-root user may cause write-permission issues with the host-mounted `test-results/` volume in CI. `mkdir -p test-results` in `Makefile` runs before Docker, so the directory is owned by the CI runner's UID. If CI fails, mitigation is `chmod 777 test-results` in the Makefile target or passing host UID as build arg.
+
+## 2026-07-04T07:52:00Z — Fix Forgejo CI non-root permission failures
+
+- **Problem**: Forgejo CI failed with `sqlite3.OperationalError: attempt to write readonly database` (production container) and `PermissionError: /app/test-results/junit.xml` (test container) after the `USER appuser` hardening was introduced.
+- **Root cause**: Neither Dockerfile pre-created the volume mount directories with `appuser` ownership before the `USER` switch.
+  - Production: Named volume `mdshare_data:/data` — Docker creates the mount point as `root`, so `appuser` can't write the SQLite DB.
+  - Test: Bind mount `./test-results:/app/test-results` — same issue; Docker creates the mount point as `root`.
+- **Changes made**:
+  - `Dockerfile`: Added `RUN mkdir -p /data && chown appuser:appuser /data` before `USER appuser` so the named volume inherits correct ownership on first mount.
+  - `Dockerfile.test`: Removed the `USER appuser` block entirely (test image is ephemeral, no security benefit from non-root).

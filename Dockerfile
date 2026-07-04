@@ -32,6 +32,8 @@ ENV MDSHARE_WORKERS=4
 # Create non-root user for security
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
     && chown -R appuser:appuser /app
+# Pre-create data volume mount point so the non-root user can write the SQLite DB
+RUN mkdir -p /data && chown appuser:appuser /data
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \

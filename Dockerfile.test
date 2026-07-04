@@ -24,9 +24,4 @@ RUN pip install --no-cache-dir -r /app/requirements-dev.txt
 COPY backend/ /app/backend/
 COPY pytest.ini /app/
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
-    && chown -R appuser:appuser /app
-USER appuser
-
 CMD ["python", "-m", "pytest", "backend", "-v", "--junitxml=/app/test-results/junit.xml"]
