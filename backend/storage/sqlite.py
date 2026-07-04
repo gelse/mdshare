@@ -26,6 +26,16 @@ class SqliteStorage(StorageBackend):
 
     def __init__(self) -> None:
         os.makedirs(config.data_dir, exist_ok=True)
+        # Verify write access to the data directory before attempting DB init.
+        # Docker named volumes may not inherit build-time ownership, causing
+        # a cryptic "unable to open database file" from sqlite3.connect().
+        if not os.access(config.data_dir, os.W_OK):
+            raise PermissionError(
+                f"Cannot write to data directory '{config.data_dir}'. "
+                f"The application user (UID {os.getuid()}) does not have "
+                f"write permission. Ensure the volume mount is owned by "
+                f"this user, or set MDSHARE_DATA_DIR to a writable path."
+            )
         self._local = threading.local()
         self._init_schema()
 

@@ -193,3 +193,11 @@
 - **Changes made**:
   - `Dockerfile`: Added `RUN mkdir -p /data && chown appuser:appuser /data` before `USER appuser` so the named volume inherits correct ownership on first mount.
   - `Dockerfile.test`: Removed the `USER appuser` block entirely (test image is ephemeral, no security benefit from non-root).
+
+## 2026-07-04T10:08:00Z — Fix fresh-deployment "unable to open database file"
+
+- **Problem**: First startup with a fresh Docker named volume failed with `sqlite3.OperationalError: unable to open database file` — the volume mount point did not have write permissions for `appuser`.
+- **Root cause**: `useradd -r` (system user) assigned UID 999 to `appuser`, which did not match the host user UID (1000). Combined with Docker's named volume ownership, this caused a write access failure.
+- **Changes made**:
+  - `Dockerfile`: Removed `-r` flag from `useradd -r` so `appuser` gets a regular user UID (≥1000, typically 1000), matching host user UIDs for better volume permission compatibility.
+  - `backend/storage/sqlite.py`: Added `os.access(config.data_dir, os.W_OK)` check in `SqliteStorage.__init__()` before `_init_schema()`, raising a clear `PermissionError` with an actionable message instead of the cryptic SQLite error.
