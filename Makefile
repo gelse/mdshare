@@ -48,7 +48,7 @@ test-integration:
 # Builds the test image and runs pytest via the "test" compose service.
 ci-unit-test:
 	rm -rf test-results && mkdir -p test-results && chmod 777 test-results
-	docker compose --profile test up --build --abort-on-container-exit --exit-code-from test
+	docker compose --profile test up --build --abort-on-container-exit --exit-code-from test test
 	docker compose --profile test down
 
 # SSL is now handled by an external reverse proxy.
